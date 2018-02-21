@@ -1,0 +1,2 @@
+# amqp
+Golang AMQP wrapper
