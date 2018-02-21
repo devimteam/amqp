@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/devimteam/amqp/codecs"
 	"github.com/streadway/amqp"
@@ -80,7 +81,7 @@ func (c Client) listen(exchangeName string, replyType interface{}, eventChan cha
 		c.opts.eventLogger.Log(0, err)
 		return
 	}
-	c.processEvents(queueName, exchangeName, channel, deliveryCh, replyType, eventChan, doneChan)
+	c.processPool(queueName, exchangeName, channel, deliveryCh, replyType, eventChan, doneChan)
 	defer func() {
 		select {
 		case <-doneChan:
@@ -117,6 +118,25 @@ func (c Client) prepareDeliveryChan(
 		return nil, "", fmt.Errorf("channel consume err: %v", err)
 	}
 	return ch, q.Name, nil
+}
+
+func (c Client) processPool(
+	queueName, exchangeName string,
+	channel *amqp.Channel,
+	deliveryCh <-chan amqp.Delivery,
+	replyType interface{},
+	eventChan chan<- Event,
+	doneChan <-chan Signal,
+) {
+	var wg sync.WaitGroup
+	wg.Add(c.opts.handlersAmount)
+	for i := 0; i < c.opts.handlersAmount; i++ {
+		go func() {
+			c.processEvents(queueName, exchangeName, channel, deliveryCh, replyType, eventChan, doneChan)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
 }
 
 func (c Client) processEvents(

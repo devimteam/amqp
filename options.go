@@ -19,6 +19,7 @@ type options struct {
 	context                context.Context
 	msgOpts                messageOptions
 	processAllDeliveries   bool
+	handlersAmount         int
 }
 
 type MessageIdBuilder func() string
@@ -32,8 +33,9 @@ const (
 )
 
 const (
-	defaultWaitDeadline = time.Second * 5
-	defaultEventBuffer  = 1
+	defaultWaitDeadline  = time.Second * 5
+	defaultEventBuffer   = 1
+	defaultHandlerAmount = 1
 )
 
 func defaultOptions() options {
@@ -45,6 +47,7 @@ func defaultOptions() options {
 	opts.msgOpts.minPriority = MinMessagePriority
 	opts.msgOpts.maxPriority = MaxMessagePriority
 	opts.msgOpts.typer = noopTyper
+	opts.handlersAmount = defaultHandlerAmount
 	return opts
 }
 
@@ -144,6 +147,16 @@ func DeliverBefore(before ...DeliveryBefore) Option {
 func ProcessAllDeliveries(v bool) Option {
 	return func(options *options) {
 		options.processAllDeliveries = v
+	}
+}
+
+// HandlersAmount sets the amount of handle processes, which receive deliveries from one channel.
+// For n > 1 client does not guarantee the order of events.
+func HandlersAmount(n int) Option {
+	return func(options *options) {
+		if n > 0 {
+			options.handlersAmount = n
+		}
 	}
 }
 
