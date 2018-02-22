@@ -95,20 +95,21 @@ func DefaultPublishConfig() PublishConfig {
 }
 
 type configs struct {
-	exchangeConfig  ExchangeConfig
-	queueConfig     QueueConfig
-	queueBindConfig QueueBindConfig
-	consumeConfig   ConsumeConfig
-	publishConfig   PublishConfig
+	exchange  ExchangeConfig
+	queue     QueueConfig
+	queueBind QueueBindConfig
+	consume   ConsumeConfig
+	publish   PublishConfig
+	conn      *amqp.Config
 }
 
 func newConfigs() configs {
 	return configs{
-		exchangeConfig:  DefaultExchangeConfig(),
-		queueConfig:     DefaultQueueConfig(),
-		queueBindConfig: DefaultQueueBindConfig(),
-		consumeConfig:   DefaultConsumeConfig(),
-		publishConfig:   DefaultPublishConfig(),
+		exchange:  DefaultExchangeConfig(),
+		queue:     DefaultQueueConfig(),
+		queueBind: DefaultQueueBindConfig(),
+		consume:   DefaultConsumeConfig(),
+		publish:   DefaultPublishConfig(),
 	}
 }
 
@@ -134,7 +135,15 @@ func channelConsume(channel *amqp.Channel, queueName string, consumeCfg ConsumeC
 	)
 }
 
-func channelExchangeDeclare(channel *amqp.Channel, exchangeName string, exchangeCfg ExchangeConfig) error {
+func (c Client) channelExchangeDeclare(channel *amqp.Channel, exchangeName string, exchangeCfg ExchangeConfig) (err error) {
+	if c.opts.lazyCommands && c.lazy.exchangesDeclared.Find(exchangeName) >= 0 {
+		return nil
+	}
+	defer func() {
+		if err == nil && c.opts.lazyCommands && c.lazy.exchangesDeclared.Find(exchangeName) == -1 {
+			c.lazy.exchangesDeclared.Append(exchangeName)
+		}
+	}()
 	return channel.ExchangeDeclare(
 		exchangeName,
 		exchangeCfg.Kind,
@@ -146,7 +155,15 @@ func channelExchangeDeclare(channel *amqp.Channel, exchangeName string, exchange
 	)
 }
 
-func channelQueueDeclare(channel *amqp.Channel, queueCfg QueueConfig) (amqp.Queue, error) {
+func (c Client) channelQueueDeclare(channel *amqp.Channel, queueCfg QueueConfig) (q amqp.Queue, err error) {
+	if c.opts.lazyCommands && c.lazy.queueDeclared.Find(queueCfg.Name) >= 0 {
+		return amqp.Queue{Name: queueCfg.Name}, nil
+	}
+	defer func() {
+		if err == nil && c.opts.lazyCommands && c.lazy.queueDeclared.Find(q.Name) == -1 {
+			c.lazy.queueDeclared.Append(q.Name)
+		}
+	}()
 	return channel.QueueDeclare(
 		queueCfg.Name,
 		queueCfg.Durable,

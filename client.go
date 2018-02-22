@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/devimteam/amqp/codecs"
 	"github.com/streadway/amqp"
@@ -15,20 +16,37 @@ type Client struct {
 	cfgs configs
 	opts options
 	conn *Connection
+	lazy struct {
+		exchangesDeclared SyncedStringSlice
+		queueDeclared     SyncedStringSlice
+	}
 }
 
-func NewClient(conn *Connection, opts ...ClientOption) (cl Client) {
+func NewClientWithConnection(conn *Connection, opts ...ClientOption) (cl Client) {
+	cl.opts = defaultOptions()
+	cl.cfgs = newConfigs()
+	cl.conn = conn
+	applyOptions(&cl, opts...)
+	conn.WaitInit(0)
+	return
+}
+
+func NewClient(url string, opts ...ClientOption) (cl Client) {
 	cl.opts = defaultOptions()
 	cl.cfgs = newConfigs()
 	applyOptions(&cl, opts...)
-	conn.WaitInit()
+	if cl.cfgs.conn != nil {
+		cl.conn, _ = DialConfig(url, *cl.cfgs.conn)
+	} else {
+		cl.conn, _ = Dial(url)
+	}
 	return
 }
 
 func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opts ...ClientOption) error {
 	applyOptions(&c, opts...)
-	if c.opts.waitConnection {
-		err := c.conn.Wait(c.opts.waitConnectionDeadline)
+	if c.opts.wait.flag {
+		err := c.conn.Wait(c.opts.wait.timeout)
 		if err != nil {
 			return err
 		}
@@ -37,7 +55,7 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 	if err != nil {
 		return WrapError("new channel", err)
 	}
-	err = channelExchangeDeclare(channel, exchangeName, c.cfgs.exchangeConfig)
+	err = c.channelExchangeDeclare(channel, exchangeName, c.cfgs.exchange)
 	if err != nil {
 		return WrapError("declare exchange", err)
 	}
@@ -49,7 +67,7 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 	for _, before := range c.opts.msgOpts.pubBefore {
 		before(ctx, &msg)
 	}
-	err = channelPublish(channel, exchangeName, c.cfgs.publishConfig, msg)
+	err = channelPublish(channel, exchangeName, c.cfgs.publish, msg)
 	if err != nil {
 		return WrapError("publish", err)
 	}
@@ -65,23 +83,23 @@ func (c Client) Sub(exchangeName string, replyType interface{}, opts ...ClientOp
 
 func (c Client) listen(exchangeName string, replyType interface{}, eventChan chan<- Event, doneChan <-chan Signal, opts ...ClientOption) {
 	applyOptions(&c, opts...)
-	if c.opts.waitConnection {
-		err := c.conn.Wait(c.opts.waitConnectionDeadline)
+	if c.opts.wait.flag {
+		err := c.conn.Wait(c.opts.wait.timeout)
 		if err != nil {
-			c.opts.eventLogger.Log(0, err)
+			c.opts.log.error.Log(err)
 		}
 	}
 	channel, err := c.conn.Connection().Channel()
 	if err != nil {
-		c.opts.eventLogger.Log(0, err)
+		c.opts.log.error.Log(err)
 		return
 	}
 	deliveryCh, queueName, err := c.prepareDeliveryChan(channel, exchangeName)
 	if err != nil {
-		c.opts.eventLogger.Log(0, err)
+		c.opts.log.error.Log(err)
 		return
 	}
-	c.processPool(queueName, exchangeName, channel, deliveryCh, replyType, eventChan, doneChan)
+	c.processersPool(queueName, exchangeName, channel, deliveryCh, replyType, eventChan, doneChan)
 	defer func() {
 		select {
 		case <-doneChan:
@@ -96,31 +114,31 @@ func (c Client) prepareDeliveryChan(
 	channel *amqp.Channel,
 	exchangeName string,
 ) (<-chan amqp.Delivery, string, error) {
-	c.opts.eventLogger.Log(3, fmt.Errorf("prepare delivery chan for exchange %s", exchangeName))
-	c.opts.eventLogger.Log(3, fmt.Errorf("exchange(%s) declare", exchangeName))
-	err := channelExchangeDeclare(channel, exchangeName, c.cfgs.exchangeConfig)
+	c.opts.log.debug.Log(fmt.Errorf("prepare delivery chan for exchange %s", exchangeName))
+	c.opts.log.debug.Log(fmt.Errorf("exchange(%s) declare", exchangeName))
+	err := c.channelExchangeDeclare(channel, exchangeName, c.cfgs.exchange)
 	if err != nil {
 		return nil, "", fmt.Errorf("exchange declare err: %v", err)
 	}
-	c.opts.eventLogger.Log(3, fmt.Errorf("queue(%s) declare", c.cfgs.queueConfig.Name))
-	q, err := channelQueueDeclare(channel, c.cfgs.queueConfig)
+	c.opts.log.debug.Log(fmt.Errorf("queue(%s) declare", c.cfgs.queue.Name))
+	q, err := c.channelQueueDeclare(channel, c.cfgs.queue)
 	if err != nil {
 		return nil, "", fmt.Errorf("queue declare err: %v", err)
 	}
-	c.opts.eventLogger.Log(3, fmt.Errorf("bind queue(%s) to exchange(%s)", q.Name, exchangeName))
-	err = channelQueueBind(channel, q.Name, exchangeName, c.cfgs.queueBindConfig)
+	c.opts.log.debug.Log(fmt.Errorf("bind queue(%s) to exchange(%s)", q.Name, exchangeName))
+	err = channelQueueBind(channel, q.Name, exchangeName, c.cfgs.queueBind)
 	if err != nil {
 		return nil, "", fmt.Errorf("queue bind err: %v", err)
 	}
-	c.opts.eventLogger.Log(3, fmt.Errorf("consume from queue(%s)", q.Name))
-	ch, err := channelConsume(channel, q.Name, c.cfgs.consumeConfig)
+	c.opts.log.debug.Log(fmt.Errorf("consume from queue(%s)", q.Name))
+	ch, err := channelConsume(channel, q.Name, c.cfgs.consume)
 	if err != nil {
 		return nil, "", fmt.Errorf("channel consume err: %v", err)
 	}
 	return ch, q.Name, nil
 }
 
-func (c Client) processPool(
+func (c Client) processersPool(
 	queueName, exchangeName string,
 	channel *amqp.Channel,
 	deliveryCh <-chan amqp.Delivery,
@@ -139,6 +157,8 @@ func (c Client) processPool(
 	wg.Wait()
 }
 
+var DeliveryChannelWasClosedError = errors.New("delivery channel was closed")
+
 func (c Client) processEvents(
 	queueName, exchangeName string,
 	channel *amqp.Channel,
@@ -153,20 +173,22 @@ func (c Client) processEvents(
 		case d, ok := <-deliveryCh:
 			if !ok {
 				processedAll = true
-				c.opts.eventLogger.Log(1, fmt.Errorf("delivery channel was closed"))
+				c.opts.log.info.Log(DeliveryChannelWasClosedError)
+				return
 			}
+			c.opts.log.debug.Log(fmt.Errorf("process delivery %s", d.MessageId))
 			c.processEvent(d, replyType, eventChan)
 		case <-doneChan:
 			if c.opts.processAllDeliveries && processedAll {
 				close(eventChan)
 				if channel != nil {
-					channel.QueueUnbind(queueName, c.cfgs.queueBindConfig.Key, exchangeName, c.cfgs.queueBindConfig.Args)
-					channel.QueueDelete(queueName, c.cfgs.queueConfig.IfUnused, c.cfgs.queueConfig.IfEmpty, c.cfgs.queueConfig.NoWait)
+					channel.QueueUnbind(queueName, c.cfgs.queueBind.Key, exchangeName, c.cfgs.queueBind.Args)
+					channel.QueueDelete(queueName, c.cfgs.queue.IfUnused, c.cfgs.queue.IfEmpty, c.cfgs.queue.NoWait)
 					channel.Close()
 				}
 				return
 			}
-			// fixme: Should we sleep here? time.Sleep(time.Millisecond*100)
+			time.Sleep(time.Millisecond * 100)
 		}
 	}
 }
@@ -174,15 +196,22 @@ func (c Client) processEvents(
 func (c Client) processEvent(d amqp.Delivery, replyType interface{}, eventChan chan<- Event) {
 	err := c.checkEvent(d)
 	if err != nil {
-		c.opts.eventLogger.Log(1, err)
+		err = c.errorBefore(d, err)
+		c.opts.log.warn.Log(err)
+		e := d.Nack(false, true)
+		if e != nil {
+			c.opts.log.error.Log(fmt.Errorf("nack delivery: %v because of %v", e, err))
+		}
+		return
 	}
 	ev, err := c.handleEvent(d, replyType)
 	if err != nil {
+		err = c.errorBefore(d, err)
+		c.opts.log.warn.Log(err)
 		e := d.Nack(false, true)
 		if e != nil {
-			c.opts.eventLogger.Log(1, fmt.Errorf("nack: %v", e))
+			c.opts.log.error.Log(fmt.Errorf("nack delivery: %v because of %v", e, err))
 		}
-		c.opts.eventLogger.Log(2, fmt.Errorf("handle event: %v", err))
 		return
 	}
 	eventChan <- ev
@@ -217,6 +246,14 @@ func (c Client) handleEvent(d amqp.Delivery, replyType interface{}) (ev Event, e
 	return
 }
 
+// ErrorBefore allows user to update error messages before logging.
+func (c Client) errorBefore(d amqp.Delivery, err error) error {
+	for _, before := range c.opts.errorBefore {
+		err = before(d, err)
+	}
+	return err
+}
+
 type ClientOption func(*Client)
 
 func applyOptions(cl *Client, opts ...ClientOption) {
@@ -227,31 +264,38 @@ func applyOptions(cl *Client, opts ...ClientOption) {
 
 func SetDefaultExchangeConfig(cfg ExchangeConfig) ClientOption {
 	return func(client *Client) {
-		client.cfgs.exchangeConfig = cfg
+		client.cfgs.exchange = cfg
 	}
 }
 
 func SetDefaultQueueConfig(cfg QueueConfig) ClientOption {
 	return func(client *Client) {
-		client.cfgs.queueConfig = cfg
+		client.cfgs.queue = cfg
 	}
 }
 
 func SetDefaultQueueBindConfig(cfg QueueBindConfig) ClientOption {
 	return func(client *Client) {
-		client.cfgs.queueBindConfig = cfg
+		client.cfgs.queueBind = cfg
 	}
 }
 
 func SetDefaultConsumeConfig(cfg ConsumeConfig) ClientOption {
 	return func(client *Client) {
-		client.cfgs.consumeConfig = cfg
+		client.cfgs.consume = cfg
 	}
 }
 
 func SetDefaultPublishConfig(cfg PublishConfig) ClientOption {
 	return func(client *Client) {
-		client.cfgs.publishConfig = cfg
+		client.cfgs.publish = cfg
+	}
+}
+
+// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub calls.
+func WithConfig(config amqp.Config) ClientOption {
+	return func(client *Client) {
+		client.cfgs.conn = &config
 	}
 }
 

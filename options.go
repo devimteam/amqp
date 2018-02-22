@@ -5,27 +5,40 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/satori/go.uuid"
 	"github.com/streadway/amqp"
 )
 
 type options struct {
-	waitConnection         bool
-	waitConnectionDeadline time.Duration
-	timeoutBase            time.Duration
-	timeoutCap             int
-	subEventChanBuffer     int
-	connectionLogger       Logger
-	eventLogger            Logger
-	context                context.Context
-	msgOpts                messageOptions
-	processAllDeliveries   bool
-	handlersAmount         int
+	wait struct {
+		flag    bool
+		timeout time.Duration
+	}
+	timeout struct {
+		base time.Duration
+		cap  int
+	}
+	subEventChanBuffer int
+	log                struct {
+		debug      Logger
+		info       Logger
+		warn       Logger
+		error      Logger
+		connection Logger
+	}
+	context              context.Context
+	msgOpts              messageOptions
+	processAllDeliveries bool
+	handlersAmount       int
+	errorBefore          []ErrorBefore
+	lazyCommands         bool
 }
 
 type MessageIdBuilder func() string
 type Typer func(value interface{}) string // function, that should return string representation of type's value
 type PublishingBefore func(context.Context, *amqp.Publishing)
 type DeliveryBefore func(context.Context, *amqp.Delivery) context.Context
+type ErrorBefore func(amqp.Delivery, error) error
 
 const (
 	MaxMessagePriority = 9
@@ -41,33 +54,38 @@ const (
 func defaultOptions() options {
 	opts := options{}
 	opts.context = context.Background()
-	opts.waitConnectionDeadline = defaultWaitDeadline
+	opts.wait.timeout = defaultWaitDeadline
 	opts.subEventChanBuffer = defaultEventBuffer
 	opts.msgOpts.idBuilder = noopMessageIdBuilder
 	opts.msgOpts.minPriority = MinMessagePriority
 	opts.msgOpts.maxPriority = MaxMessagePriority
 	opts.msgOpts.typer = noopTyper
 	opts.handlersAmount = defaultHandlerAmount
+	opts.log.debug = noopLogger{}
+	opts.log.info = noopLogger{}
+	opts.log.warn = noopLogger{}
+	opts.log.error = noopLogger{}
+	opts.log.connection = noopLogger{}
 	return opts
 }
 
 type Option func(*options)
 
 // Timeout sets delays for connection between attempts.
-// Has no effect on NewClient function.
+// Has no effect on NewClientWithConnection function.
 func Timeout(base time.Duration, cap int) Option {
 	return func(options *options) {
-		options.timeoutBase = base
-		options.timeoutCap = cap
+		options.timeout.base = base
+		options.timeout.cap = cap
 	}
 }
 
 // WaitConnection tells client to wait connection before Sub or Pub executing.
-func WaitConnection(should bool, deadline time.Duration) Option {
+func WaitConnection(should bool, timeout time.Duration) Option {
 	return func(options *options) {
-		options.waitConnection = should
-		if deadline != 0 {
-			options.waitConnectionDeadline = deadline
+		options.wait.flag = should
+		if timeout != 0 {
+			options.wait.timeout = timeout
 		}
 	}
 }
@@ -113,17 +131,38 @@ func UserId(id string) Option {
 }
 
 // EventLogger option sets logger, which logs connection events.
-// Has no effect on NewClient function.
+// Has no effect on NewClientWithConnection function.
 func ConnectionLogger(lg Logger) Option {
 	return func(options *options) {
-		options.connectionLogger = lg
+		options.log.connection = lg
 	}
 }
 
-// EventLogger option sets logger, which logs events of Sub method.
-func EventLogger(lg Logger) Option {
+// InfoLogger option sets logger, which logs info messages.
+func InfoLogger(lg Logger) Option {
 	return func(options *options) {
-		options.eventLogger = lg
+		options.log.info = lg
+	}
+}
+
+// DebugLogger option sets logger, which logs debug messages.
+func DebugLogger(lg Logger) Option {
+	return func(options *options) {
+		options.log.debug = lg
+	}
+}
+
+// ErrorLogger option sets logger, which logs error messages.
+func ErrorLogger(lg Logger) Option {
+	return func(options *options) {
+		options.log.error = lg
+	}
+}
+
+// WarnLogger option sets logger, which logs warning messages.
+func WarnLogger(lg Logger) Option {
+	return func(options *options) {
+		options.log.warn = lg
 	}
 }
 
@@ -160,14 +199,27 @@ func HandlersAmount(n int) Option {
 	}
 }
 
-func noopMessageIdBuilder() string {
+// LazyDeclaring option with true value tells the Client not to declare exchanges and queues
+// if it was declared before by this Client.
+// By default client declares it on every Sub loop and every Pub call.
+func LazyDeclaring(v bool) Option {
+	return func(options *options) {
+		options.lazyCommands = v
+	}
+}
+
+var noopMessageIdBuilder = func() string {
 	return ""
 }
 
-func noopTyper(_ interface{}) string {
+var noopTyper = func(_ interface{}) string {
 	return ""
 }
 
-func DefaultTyper(v interface{}) string {
+func CommonTyper(v interface{}) string {
 	return fmt.Sprintf("%T", v)
+}
+
+func CommonMessageIdBuilder() string {
+	return uuid.NewV4().String()
 }

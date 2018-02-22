@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -54,4 +55,32 @@ func WrapError(errs ...interface{}) error {
 
 func (e stackingError) Error() string {
 	return strings.Join(e.errs, ":")
+}
+
+type SyncedStringSlice struct {
+	mx    sync.Mutex
+	slice []string
+}
+
+func (s *SyncedStringSlice) Append(strs ...string) {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	s.slice = append(s.slice, strs...)
+}
+
+func (s *SyncedStringSlice) Get() []string {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	return s.slice
+}
+
+func (s *SyncedStringSlice) Find(str string) int {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	for i := range s.slice {
+		if s.slice[i] == str {
+			return i
+		}
+	}
+	return -1
 }

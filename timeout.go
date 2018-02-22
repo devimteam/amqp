@@ -4,43 +4,43 @@ import "time"
 
 const defaultTimeoutBase = time.Second
 
-type TimeoutBuilder func() Timeouter
+type DelayBuilder func() Delayer
 
-func DefaultTimeoutBuilder(cap int, delay time.Duration) TimeoutBuilder {
-	return func() Timeouter {
-		return NewTimeouter(cap, delay)
+func DefaultDelayBuilder(cap int, delay time.Duration) DelayBuilder {
+	return func() Delayer {
+		return NewDelayer(cap, delay)
 	}
 }
 
-type Timeouter interface {
-	Timeout() // Wait for period of time.
-	Inc()     // Increase duration of next Timeout call.
+type Delayer interface {
+	Wait() // Wait for period of time.
+	Inc()  // Increase duration of next Timeout call.
 }
 
-type timeouter struct {
+type delayer struct {
 	cap        int
 	currentCap uint
 	baseDelay  time.Duration
 }
 
-func NewTimeouter(cap int, delay time.Duration) *timeouter {
-	return &timeouter{
+func NewDelayer(cap int, delay time.Duration) Delayer {
+	return &delayer{
 		currentCap: 0,
 		cap:        cap,
 		baseDelay:  delay,
 	}
 }
 
-func (s *timeouter) Timeout() {
+func (s *delayer) Wait() {
 	time.Sleep(s.baseDelay * time.Duration(expOf2(s.currentCap)))
 }
 
-func (s *timeouter) Inc() {
+func (s *delayer) Inc() {
 	if s.cap < 0 || s.currentCap < uint(s.cap) {
 		s.currentCap++
 	}
 }
 
-func (s *timeouter) Value() time.Duration {
+func (s *delayer) Value() time.Duration {
 	return s.baseDelay * time.Duration(expOf2(s.currentCap))
 }

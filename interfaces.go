@@ -1,7 +1,9 @@
 package amqp
 
+// Logger represents logger interface that used to log messages.
+// This interface is a copy of go-kit Logger interface.
 type Logger interface {
-	Log(level int, err error)
+	Log(v ...interface{}) error
 }
 
 type ContentTyper interface {
@@ -10,6 +12,6 @@ type ContentTyper interface {
 
 type noopLogger struct{}
 
-func (noopLogger) Log(int, error) {
-	return
+func (noopLogger) Log(v ...interface{}) error {
+	return nil
 }
