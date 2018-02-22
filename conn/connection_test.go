@@ -27,13 +27,58 @@ func TestDial(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// Test Attempts Option.
+// Test Attempts option.
 func TestDialNTimes(t *testing.T) {
 	ch := make(chan []interface{})
 	var args = struct {
 		url  string
 		opts []ConnectionOption
 	}{url: "amqp://localhost:5672", opts: []ConnectionOption{WithLogger(logger.NewChanLogger(ch)), Attempts(3)}}
+	go Dial(args.url, args.opts...)
+	waitFor(MaxAttemptsError, ch)
+}
+
+// Test WithCancel option.
+func TestDialCancel(t *testing.T) {
+	ch := make(chan []interface{})
+	cancel := make(chan Signal)
+	go waitFor(CanceledError, ch)
+	var args = struct {
+		url  string
+		opts []ConnectionOption
+	}{url: "amqp://localhost:5672", opts: []ConnectionOption{WithLogger(logger.NewChanLogger(ch)), WithCancel(cancel)}}
+	go Dial(args.url, args.opts...)
+	time.Sleep(time.Second * 10)
+	cancel <- Signal{}
+	time.Sleep(time.Second * 3)
+}
+
+// Test WithDelay option.
+func TestDialDelay(t *testing.T) {
+	ch := make(chan []interface{})
+	var args = struct {
+		url  string
+		opts []ConnectionOption
+	}{url: "amqp://localhost:5672", opts: []ConnectionOption{
+		WithLogger(logger.NewChanLogger(ch)),
+		Attempts(10),
+		WithDelay(time.Millisecond*100, time.Millisecond*100),
+	}}
+	go Dial(args.url, args.opts...)
+	waitFor(MaxAttemptsError, ch)
+}
+
+// Test WithDelayBuilder option.
+func TestDialDelayBuilder(t *testing.T) {
+	ch := make(chan []interface{})
+	var args = struct {
+		url  string
+		opts []ConnectionOption
+	}{url: "amqp://localhost:5672", opts: []ConnectionOption{
+		WithLogger(logger.NewChanLogger(ch)),
+		Attempts(30),
+		WithDelayBuilder(testDelayBuilder),
+	}}
 	go Dial(args.url, args.opts...)
 	waitFor(MaxAttemptsError, ch)
 }
@@ -54,3 +99,11 @@ func listenAndPrintln(ch <-chan []interface{}) {
 		fmt.Println(e...)
 	}
 }
+func testDelayBuilder() Delayer {
+	return testDelayer{}
+}
+
+type testDelayer struct{}
+
+func (testDelayer) Wait() { time.Sleep(time.Millisecond * 20) }
+func (testDelayer) Inc()  {}

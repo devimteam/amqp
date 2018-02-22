@@ -133,11 +133,17 @@ func (c *Connection) connect(url string, dialer Dialer) {
 	i := 0
 ConnectionLoop:
 	for ; infinite(c.maxAttempts) || i < c.maxAttempts; i++ {
+		delayCh := make(chan Signal)
+		go func() {
+			delay.Wait()
+			delayCh <- Signal{}
+			close(delayCh)
+		}()
 		select {
 		case <-c.done:
+			c.logger.Log(CanceledError)
 			return
-		default:
-			delay.Wait()
+		case <-delayCh:
 			delay.Inc()
 			connection, err := dialer()
 			if err != nil {
@@ -164,6 +170,7 @@ ConnectionLoop:
 var (
 	DeadlineError    = errors.New("the deadline was reached")
 	MaxAttemptsError = errors.New("maximum attempts was reached")
+	CanceledError    = errors.New("connection was canceled")
 )
 
 func (c *Connection) Wait(timeout time.Duration) error {
