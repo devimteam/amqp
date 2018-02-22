@@ -88,7 +88,7 @@ func (c Connection) Connection() *amqp.Connection {
 // Never returns error.
 func Dial(url string, opts ...ConnectionOption) (*Connection, error) {
 	c := newConnection(opts...)
-	c.connect(url, func() (*amqp.Connection, error) {
+	c.connect(func() (*amqp.Connection, error) {
 		return amqp.Dial(url)
 	})
 	return &c, nil
@@ -98,7 +98,7 @@ func Dial(url string, opts ...ConnectionOption) (*Connection, error) {
 // Never returns error.
 func DialTLS(url string, amqps *tls.Config, opts ...ConnectionOption) (*Connection, error) {
 	c := newConnection(opts...)
-	c.connect(url, func() (*amqp.Connection, error) {
+	c.connect(func() (*amqp.Connection, error) {
 		return amqp.DialTLS(url, amqps)
 	})
 	return &c, nil
@@ -108,7 +108,7 @@ func DialTLS(url string, amqps *tls.Config, opts ...ConnectionOption) (*Connecti
 // Never returns error.
 func DialConfig(url string, config amqp.Config, opts ...ConnectionOption) (*Connection, error) {
 	c := newConnection(opts...)
-	c.connect(url, func() (*amqp.Connection, error) {
+	c.connect(func() (*amqp.Connection, error) {
 		return amqp.DialConfig(url, config)
 	})
 	return &c, nil
@@ -118,7 +118,7 @@ func DialConfig(url string, config amqp.Config, opts ...ConnectionOption) (*Conn
 // Never returns error.
 func Open(conn io.ReadWriteCloser, config amqp.Config, opts ...ConnectionOption) (*Connection, error) {
 	c := newConnection(opts...)
-	c.connect("", func() (*amqp.Connection, error) {
+	c.connect(func() (*amqp.Connection, error) {
 		return amqp.Open(conn, config)
 	})
 	return &c, nil
@@ -126,18 +126,17 @@ func Open(conn io.ReadWriteCloser, config amqp.Config, opts ...ConnectionOption)
 
 // connect connects with dialer and listens until connection drops.
 // connect starts itself when connection drops.
-func (c *Connection) connect(url string, dialer Dialer) {
+func (c *Connection) connect(dialer Dialer) {
 	c.state.Disconnected()
-	c.logger.Log(fmt.Errorf("disconnected from %s", url))
-	delay := c.delayBuilder()
-	i := 0
+	c.logger.Log(Disconnected)
+	attemptNum, delay, delayCh := 0, c.delayBuilder(), make(chan Signal)
 ConnectionLoop:
-	for ; infinite(c.maxAttempts) || i < c.maxAttempts; i++ {
-		delayCh := make(chan Signal)
+	for ; infinite(c.maxAttempts) || attemptNum < c.maxAttempts; attemptNum++ {
+		close(delayCh)
+		delayCh = make(chan Signal)
 		go func() {
 			delay.Wait()
 			delayCh <- Signal{}
-			close(delayCh)
 		}()
 		select {
 		case <-c.done:
@@ -154,23 +153,25 @@ ConnectionLoop:
 			go func() {
 				c.logger.Log(fmt.Errorf("connection closed: %v", <-connection.NotifyClose(make(chan *amqp.Error))))
 				c.notifier.Notify()
-				c.connect(url, dialer)
+				c.connect(dialer)
 			}()
 			break ConnectionLoop
 		}
 	}
 	defer c.state.Connected()
-	if i == c.maxAttempts {
+	if attemptNum == c.maxAttempts {
 		c.logger.Log(MaxAttemptsError)
 		return
 	}
-	defer c.logger.Log(fmt.Errorf("connected to %s", url))
+	defer c.logger.Log(Connected)
 }
 
 var (
 	DeadlineError    = errors.New("the deadline was reached")
 	MaxAttemptsError = errors.New("maximum attempts was reached")
 	CanceledError    = errors.New("connection was canceled")
+	Disconnected     = errors.New("disconnected")
+	Connected        = errors.New("connected")
 )
 
 func (c *Connection) Wait(timeout time.Duration) error {
