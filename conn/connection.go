@@ -1,4 +1,4 @@
-package amqp
+package conn
 
 import (
 	"crypto/tls"
@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devimteam/amqp/logger"
 	"github.com/streadway/amqp"
 )
 
@@ -15,7 +16,7 @@ import (
 type Connection struct {
 	conn         *amqp.Connection
 	delayBuilder DelayBuilder
-	logger       Logger
+	logger       logger.Logger
 	state        ConnectionState
 	notifier     Notifier
 	done         <-chan Signal
@@ -23,7 +24,7 @@ type Connection struct {
 
 type ConnectionOption func(*Connection)
 
-func WithLogger(logger Logger) ConnectionOption {
+func WithLogger(logger logger.Logger) ConnectionOption {
 	return func(connection *Connection) {
 		connection.logger = logger
 	}
@@ -32,6 +33,13 @@ func WithLogger(logger Logger) ConnectionOption {
 func WithDelayBuilder(builder DelayBuilder) ConnectionOption {
 	return func(connection *Connection) {
 		connection.delayBuilder = builder
+	}
+}
+
+// Timeout sets delays for connection between attempts.
+func WithTimeout(base time.Duration, cap int) ConnectionOption {
+	return func(connection *Connection) {
+		connection.delayBuilder = CommonDelayBuilder(cap, base)
 	}
 }
 
@@ -52,8 +60,8 @@ func newConnection(opts ...ConnectionOption) Connection {
 
 func defaultConnection() Connection {
 	return Connection{
-		delayBuilder: DefaultDelayBuilder(-1, defaultTimeoutBase),
-		logger:       noopLogger{},
+		delayBuilder: CommonDelayBuilder(-1, defaultTimeoutBase),
+		logger:       logger.NoopLogger,
 		done:         make(chan Signal),
 	}
 }

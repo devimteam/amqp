@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/devimteam/amqp/conn"
+	"github.com/devimteam/amqp/logger"
 	"github.com/satori/go.uuid"
 	"github.com/streadway/amqp"
 )
@@ -20,11 +22,10 @@ type options struct {
 	}
 	subEventChanBuffer int
 	log                struct {
-		debug      Logger
-		info       Logger
-		warn       Logger
-		error      Logger
-		connection Logger
+		debug logger.Logger
+		info  logger.Logger
+		warn  logger.Logger
+		error logger.Logger
 	}
 	context              context.Context
 	msgOpts              messageOptions
@@ -32,6 +33,7 @@ type options struct {
 	handlersAmount       int
 	errorBefore          []ErrorBefore
 	lazyCommands         bool
+	connOpts             []conn.ConnectionOption
 }
 
 type MessageIdBuilder func() string
@@ -61,24 +63,14 @@ func defaultOptions() options {
 	opts.msgOpts.maxPriority = MaxMessagePriority
 	opts.msgOpts.typer = noopTyper
 	opts.handlersAmount = defaultHandlerAmount
-	opts.log.debug = noopLogger{}
-	opts.log.info = noopLogger{}
-	opts.log.warn = noopLogger{}
-	opts.log.error = noopLogger{}
-	opts.log.connection = noopLogger{}
+	opts.log.debug = logger.NoopLogger
+	opts.log.info = logger.NoopLogger
+	opts.log.warn = logger.NoopLogger
+	opts.log.error = logger.NoopLogger
 	return opts
 }
 
 type Option func(*options)
-
-// Timeout sets delays for connection between attempts.
-// Has no effect on NewClientWithConnection function.
-func Timeout(base time.Duration, cap int) Option {
-	return func(options *options) {
-		options.timeout.base = base
-		options.timeout.cap = cap
-	}
-}
 
 // WaitConnection tells client to wait connection before Sub or Pub executing.
 func WaitConnection(should bool, timeout time.Duration) Option {
@@ -130,37 +122,29 @@ func UserId(id string) Option {
 	}
 }
 
-// EventLogger option sets logger, which logs connection events.
-// Has no effect on NewClientWithConnection function.
-func ConnectionLogger(lg Logger) Option {
-	return func(options *options) {
-		options.log.connection = lg
-	}
-}
-
 // InfoLogger option sets logger, which logs info messages.
-func InfoLogger(lg Logger) Option {
+func InfoLogger(lg logger.Logger) Option {
 	return func(options *options) {
 		options.log.info = lg
 	}
 }
 
 // DebugLogger option sets logger, which logs debug messages.
-func DebugLogger(lg Logger) Option {
+func DebugLogger(lg logger.Logger) Option {
 	return func(options *options) {
 		options.log.debug = lg
 	}
 }
 
 // ErrorLogger option sets logger, which logs error messages.
-func ErrorLogger(lg Logger) Option {
+func ErrorLogger(lg logger.Logger) Option {
 	return func(options *options) {
 		options.log.error = lg
 	}
 }
 
 // WarnLogger option sets logger, which logs warning messages.
-func WarnLogger(lg Logger) Option {
+func WarnLogger(lg logger.Logger) Option {
 	return func(options *options) {
 		options.log.warn = lg
 	}

@@ -9,20 +9,21 @@ import (
 	"time"
 
 	"github.com/devimteam/amqp/codecs"
+	"github.com/devimteam/amqp/conn"
 	"github.com/streadway/amqp"
 )
 
 type Client struct {
 	cfgs configs
 	opts options
-	conn *Connection
+	conn *conn.Connection
 	lazy struct {
 		exchangesDeclared SyncedStringSlice
 		queueDeclared     SyncedStringSlice
 	}
 }
 
-func NewClientWithConnection(conn *Connection, opts ...ClientOption) (cl Client) {
+func NewClientWithConnection(conn *conn.Connection, opts ...ClientOption) (cl Client) {
 	cl.opts = defaultOptions()
 	cl.cfgs = newConfigs()
 	cl.conn = conn
@@ -36,9 +37,9 @@ func NewClient(url string, opts ...ClientOption) (cl Client) {
 	cl.cfgs = newConfigs()
 	applyOptions(&cl, opts...)
 	if cl.cfgs.conn != nil {
-		cl.conn, _ = DialConfig(url, *cl.cfgs.conn)
+		cl.conn, _ = conn.DialConfig(url, *cl.cfgs.conn, cl.opts.connOpts...)
 	} else {
-		cl.conn, _ = Dial(url)
+		cl.conn, _ = conn.Dial(url, cl.opts.connOpts...)
 	}
 	return
 }
@@ -74,14 +75,14 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 	return nil
 }
 
-func (c Client) Sub(exchangeName string, replyType interface{}, opts ...ClientOption) (<-chan Event, chan<- Signal) {
+func (c Client) Sub(exchangeName string, replyType interface{}, opts ...ClientOption) (<-chan Event, chan<- conn.Signal) {
 	eventChan := make(chan Event, c.opts.subEventChanBuffer)
-	doneCh := make(chan Signal)
+	doneCh := make(chan conn.Signal)
 	go c.listen(exchangeName, replyType, eventChan, doneCh, opts...)
 	return eventChan, doneCh
 }
 
-func (c Client) listen(exchangeName string, replyType interface{}, eventChan chan<- Event, doneChan <-chan Signal, opts ...ClientOption) {
+func (c Client) listen(exchangeName string, replyType interface{}, eventChan chan<- Event, doneChan <-chan conn.Signal, opts ...ClientOption) {
 	applyOptions(&c, opts...)
 	if c.opts.wait.flag {
 		err := c.conn.Wait(c.opts.wait.timeout)
@@ -144,7 +145,7 @@ func (c Client) processersPool(
 	deliveryCh <-chan amqp.Delivery,
 	replyType interface{},
 	eventChan chan<- Event,
-	doneChan <-chan Signal,
+	doneChan <-chan conn.Signal,
 ) {
 	var wg sync.WaitGroup
 	wg.Add(c.opts.handlersAmount)
@@ -165,7 +166,7 @@ func (c Client) processEvents(
 	deliveryCh <-chan amqp.Delivery,
 	replyType interface{},
 	eventChan chan<- Event,
-	doneChan <-chan Signal,
+	doneChan <-chan conn.Signal,
 ) {
 	processedAll := false
 	for {
@@ -304,5 +305,12 @@ func WithOptions(opts ...Option) ClientOption {
 		for i := range opts {
 			opts[i](&client.opts)
 		}
+	}
+}
+
+// Has no effect on NewClientWithConnection function.
+func WithConnOptions(opts ...conn.ConnectionOption) ClientOption {
+	return func(client *Client) {
+		client.opts.connOpts = append(client.opts.connOpts, opts...)
 	}
 }

@@ -1,4 +1,4 @@
-package amqp
+package conn
 
 import "time"
 
@@ -6,9 +6,9 @@ const defaultTimeoutBase = time.Second
 
 type DelayBuilder func() Delayer
 
-func DefaultDelayBuilder(cap int, delay time.Duration) DelayBuilder {
+func CommonDelayBuilder(cap int, delay time.Duration) DelayBuilder {
 	return func() Delayer {
-		return NewDelayer(cap, delay)
+		return CommonDelayer(cap, delay)
 	}
 }
 
@@ -23,7 +23,7 @@ type delayer struct {
 	baseDelay  time.Duration
 }
 
-func NewDelayer(cap int, delay time.Duration) Delayer {
+func CommonDelayer(cap int, delay time.Duration) Delayer {
 	return &delayer{
 		currentCap: 0,
 		cap:        cap,

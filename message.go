@@ -9,6 +9,10 @@ import (
 	"github.com/streadway/amqp"
 )
 
+type ContentTyper interface {
+	ContentType() string
+}
+
 type messageOptions struct {
 	pubBefore           []PublishingBefore
 	delBefore           []DeliveryBefore
