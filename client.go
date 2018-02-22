@@ -32,7 +32,7 @@ func NewClientWithConnection(conn *conn.Connection, opts ...ClientOption) (cl Cl
 	return
 }
 
-func NewClient(url string, opts ...ClientOption) (cl Client) {
+func NewClient(url string, opts ...ClientOption) (cl Client, err error) {
 	cl.opts = defaultOptions()
 	cl.cfgs = newConfigs()
 	applyOptions(&cl, opts...)
@@ -41,6 +41,7 @@ func NewClient(url string, opts ...ClientOption) (cl Client) {
 	} else {
 		cl.conn, _ = conn.Dial(url, cl.opts.connOpts...)
 	}
+	err = cl.conn.WaitInit(0)
 	return
 }
 
@@ -104,6 +105,11 @@ func (c Client) listen(exchangeName string, replyType interface{}, eventChan cha
 	defer func() {
 		select {
 		case <-doneChan:
+			if channel != nil {
+				channel.QueueUnbind(queueName, c.cfgs.queueBind.Key, exchangeName, c.cfgs.queueBind.Args)
+				channel.QueueDelete(queueName, c.cfgs.queue.IfUnused, c.cfgs.queue.IfEmpty, c.cfgs.queue.NoWait)
+				channel.Close()
+			}
 			return
 		default:
 			c.listen(exchangeName, replyType, eventChan, doneChan, opts...)
@@ -120,6 +126,9 @@ func (c Client) prepareDeliveryChan(
 	err := c.channelExchangeDeclare(channel, exchangeName, c.cfgs.exchange)
 	if err != nil {
 		return nil, "", fmt.Errorf("exchange declare err: %v", err)
+	}
+	if c.cfgs.queue.Name == "" {
+		c.cfgs.queue.Name = genRandomQueueName()
 	}
 	c.opts.log.debug.Log(fmt.Errorf("queue(%s) declare", c.cfgs.queue.Name))
 	q, err := c.channelQueueDeclare(channel, c.cfgs.queue)
@@ -182,11 +191,6 @@ func (c Client) processEvents(
 		case <-doneChan:
 			if c.opts.processAllDeliveries && processedAll {
 				close(eventChan)
-				if channel != nil {
-					channel.QueueUnbind(queueName, c.cfgs.queueBind.Key, exchangeName, c.cfgs.queueBind.Args)
-					channel.QueueDelete(queueName, c.cfgs.queue.IfUnused, c.cfgs.queue.IfEmpty, c.cfgs.queue.NoWait)
-					channel.Close()
-				}
 				return
 			}
 			time.Sleep(time.Millisecond * 100)
@@ -221,7 +225,8 @@ func (c Client) processEvent(d amqp.Delivery, replyType interface{}, eventChan c
 var NotAllowedPriority = errors.New("not allowed priority")
 
 func (c Client) checkEvent(d amqp.Delivery) error {
-	if c.opts.msgOpts.minPriority <= d.Priority && d.Priority <= c.opts.msgOpts.maxPriority {
+	priorityOk := c.opts.msgOpts.minPriority <= d.Priority && d.Priority <= c.opts.msgOpts.maxPriority
+	if !priorityOk {
 		return NotAllowedPriority
 	}
 	return nil
@@ -229,7 +234,7 @@ func (c Client) checkEvent(d amqp.Delivery) error {
 
 func (c Client) handleEvent(d amqp.Delivery, replyType interface{}) (ev Event, err error) {
 	ctx := c.opts.context
-	for _, before := range c.opts.msgOpts.delBefore {
+	for _, before := range c.opts.msgOpts.deliveryBefore {
 		ctx = before(ctx, &d)
 	}
 	ev.Context = ctx
@@ -308,7 +313,8 @@ func WithOptions(opts ...Option) ClientOption {
 	}
 }
 
-// Has no effect on NewClientWithConnection function.
+// Use this options to create new connection.
+// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub function.
 func WithConnOptions(opts ...conn.ConnectionOption) ClientOption {
 	return func(client *Client) {
 		client.opts.connOpts = append(client.opts.connOpts, opts...)

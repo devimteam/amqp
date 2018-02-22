@@ -9,21 +9,24 @@ import (
 	"github.com/streadway/amqp"
 )
 
-type ContentTyper interface {
-	ContentType() string
-}
+type (
+	ContentTyper interface {
+		ContentType() string
+	}
 
-type messageOptions struct {
-	pubBefore           []PublishingBefore
-	delBefore           []DeliveryBefore
-	applicationId       string
-	userId              string
-	idBuilder           MessageIdBuilder
-	allowedContentTypes []string
-	minPriority         uint8
-	maxPriority         uint8
-	typer               Typer
-}
+	messageOptions struct {
+		pubBefore           []PublishingBefore
+		deliveryBefore      []DeliveryBefore
+		applicationId       string
+		userId              string
+		idBuilder           MessageIdBuilder
+		allowedContentTypes []string
+		minPriority         uint8
+		maxPriority         uint8
+		typer               Typer
+		defaultContentType  string
+	}
+)
 
 var CodecNotFound = errors.New("codec not found")
 
@@ -38,6 +41,9 @@ func constructPublishing(v interface{}, opts *messageOptions) (msg amqp.Publishi
 	if ok {
 		msg.ContentType = ct.ContentType()
 		contentType = msg.ContentType
+	} else if opts.defaultContentType != "" {
+		msg.ContentType = opts.defaultContentType
+		contentType = opts.defaultContentType
 	} else {
 		msg.ContentType = http.DetectContentType(msg.Body)
 	}

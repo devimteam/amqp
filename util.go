@@ -14,6 +14,12 @@ func init() {
 	rand.Seed(time.Now().Unix())
 }
 
+var QueuePrefix = "queue-"
+
+func genRandomQueueName() string {
+	return QueuePrefix + genRandomString(15)
+}
+
 func genRandomString(length int) string {
 	n := len(randomSymbols)
 	b := make([]rune, length)
@@ -45,7 +51,7 @@ func WrapError(errs ...interface{}) error {
 }
 
 func (e stackingError) Error() string {
-	return strings.Join(e.errs, ":")
+	return strings.Join(e.errs, ": ")
 }
 
 type SyncedStringSlice struct {

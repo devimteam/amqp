@@ -11,36 +11,39 @@ import (
 	"github.com/streadway/amqp"
 )
 
-type options struct {
-	wait struct {
-		flag    bool
-		timeout time.Duration
+type (
+	// Options is a struct with almost all possible options of Client.
+	options struct {
+		wait struct {
+			flag    bool
+			timeout time.Duration
+		}
+		timeout struct {
+			base time.Duration
+			cap  int
+		}
+		subEventChanBuffer int
+		log                struct {
+			debug logger.Logger
+			info  logger.Logger
+			warn  logger.Logger
+			error logger.Logger
+		}
+		context              context.Context
+		msgOpts              messageOptions
+		processAllDeliveries bool
+		handlersAmount       int
+		errorBefore          []ErrorBefore
+		lazyCommands         bool
+		connOpts             []conn.ConnectionOption
 	}
-	timeout struct {
-		base time.Duration
-		cap  int
-	}
-	subEventChanBuffer int
-	log                struct {
-		debug logger.Logger
-		info  logger.Logger
-		warn  logger.Logger
-		error logger.Logger
-	}
-	context              context.Context
-	msgOpts              messageOptions
-	processAllDeliveries bool
-	handlersAmount       int
-	errorBefore          []ErrorBefore
-	lazyCommands         bool
-	connOpts             []conn.ConnectionOption
-}
 
-type MessageIdBuilder func() string
-type Typer func(value interface{}) string // function, that should return string representation of type's value
-type PublishingBefore func(context.Context, *amqp.Publishing)
-type DeliveryBefore func(context.Context, *amqp.Delivery) context.Context
-type ErrorBefore func(amqp.Delivery, error) error
+	MessageIdBuilder func() string                                         // Function, that should return new message Id.
+	Typer            func(value interface{}) string                        // Function, that should return string representation of type's value.
+	PublishingBefore func(context.Context, *amqp.Publishing)               // Function, that changes message before publishing.
+	DeliveryBefore   func(context.Context, *amqp.Delivery) context.Context // Function, that changes message before delivering.
+	ErrorBefore      func(amqp.Delivery, error) error                      // Function, that changes error, which caused on incorrect handling.
+)
 
 const (
 	MaxMessagePriority = 9
@@ -67,6 +70,7 @@ func defaultOptions() options {
 	opts.log.info = logger.NoopLogger
 	opts.log.warn = logger.NoopLogger
 	opts.log.error = logger.NoopLogger
+	opts.msgOpts.defaultContentType = "application/json"
 	return opts
 }
 
@@ -97,12 +101,14 @@ func Context(ctx context.Context) Option {
 	}
 }
 
+// SetMessageIdBuilder sets function, that executes on every Pub call and result can be interpreted as message Id.
 func SetMessageIdBuilder(builder MessageIdBuilder) Option {
 	return func(options *options) {
 		options.msgOpts.idBuilder = builder
 	}
 }
 
+// AllowedPriority rejects messages, which not in range.
 func AllowedPriority(from, to uint8) Option {
 	return func(options *options) {
 		options.msgOpts.minPriority = from
@@ -110,12 +116,14 @@ func AllowedPriority(from, to uint8) Option {
 	}
 }
 
+// ApplicationId adds this Id to each message, which created on Pub call.
 func ApplicationId(id string) Option {
 	return func(options *options) {
 		options.msgOpts.applicationId = id
 	}
 }
 
+// ApplicationId adds this Id to each message, which created on Pub call.
 func UserId(id string) Option {
 	return func(options *options) {
 		options.msgOpts.userId = id
@@ -150,6 +158,16 @@ func WarnLogger(lg logger.Logger) Option {
 	}
 }
 
+// AllLoggers option is a shortcut for call each <*>Logger with the same logger.
+func AllLoggers(lg logger.Logger) Option {
+	return func(options *options) {
+		options.log.info = lg
+		options.log.debug = lg
+		options.log.error = lg
+		options.log.warn = lg
+	}
+}
+
 func PublishBefore(before ...PublishingBefore) Option {
 	return func(options *options) {
 		for i := range before {
@@ -161,7 +179,7 @@ func PublishBefore(before ...PublishingBefore) Option {
 func DeliverBefore(before ...DeliveryBefore) Option {
 	return func(options *options) {
 		for i := range before {
-			options.msgOpts.delBefore = append(options.msgOpts.delBefore, before[i])
+			options.msgOpts.deliveryBefore = append(options.msgOpts.deliveryBefore, before[i])
 		}
 	}
 }

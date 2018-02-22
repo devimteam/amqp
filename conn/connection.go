@@ -12,18 +12,21 @@ import (
 	"github.com/streadway/amqp"
 )
 
-// Connection is a wrapper of amqp.Connection with reconnection ability.
-type Connection struct {
-	conn         *amqp.Connection
-	delayBuilder DelayBuilder
-	logger       logger.Logger
-	state        ConnectionState
-	notifier     Notifier
-	done         <-chan Signal
-	maxAttempts  int
-}
+type (
+	// Connection is a wrapper of amqp.Connection with reconnection ability.
+	Connection struct {
+		conn         *amqp.Connection
+		delayBuilder DelayBuilder
+		logger       logger.Logger
+		state        ConnectionState
+		notifier     Notifier
+		done         <-chan Signal
+		maxAttempts  int
+	}
 
-type ConnectionOption func(*Connection)
+	// ConnectionOption is a type which represents optional Connection's feature.
+	ConnectionOption func(*Connection)
+)
 
 func WithLogger(logger logger.Logger) ConnectionOption {
 	return func(connection *Connection) {
@@ -186,7 +189,7 @@ func (c *Connection) Wait(timeout time.Duration) error {
 // WaitInit can be called after one of Client constructors to ensure, that it is ready to serve.
 func (c *Connection) WaitInit(timeout time.Duration) error {
 	if timeout <= 0 {
-		timeout = time.Hour
+		timeout = time.Minute
 	}
 	return Wait(func(r chan<- struct{}) {
 		defer close(r)
@@ -220,15 +223,11 @@ func (s *ConnectionState) Connected() {
 	s.locked = false
 	s.mx.Unlock()
 }
-
 func (s *ConnectionState) Disconnected() {
 	s.mx.Lock()
 	s.locked = true
 }
-
-func (s *ConnectionState) IsConnected() bool {
-	return !s.locked
-}
+func (s *ConnectionState) IsConnected() bool { return !s.locked }
 
 func Wait(fn func(chan<- struct{}), timeout time.Duration, deadlineErr error) error {
 	r := make(chan struct{})
