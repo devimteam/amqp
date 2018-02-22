@@ -6,41 +6,48 @@ const defaultTimeoutBase = time.Second
 
 type DelayBuilder func() Delayer
 
-func CommonDelayBuilder(cap int, delay time.Duration) DelayBuilder {
+func CommonDelayBuilder(max, min time.Duration) DelayBuilder {
 	return func() Delayer {
-		return CommonDelayer(cap, delay)
+		return CommonDelayer(max, min)
 	}
 }
 
 type Delayer interface {
 	Wait() // Wait for period of time.
-	Inc()  // Increase duration of next Timeout call.
+	Inc()  // Increase duration of next Wait call.
 }
 
 type delayer struct {
-	cap        int
-	currentCap uint
-	baseDelay  time.Duration
+	max       time.Duration
+	current   time.Duration
+	baseDelay time.Duration
 }
 
-func CommonDelayer(cap int, delay time.Duration) Delayer {
+func CommonDelayer(max, min time.Duration) Delayer {
 	return &delayer{
-		currentCap: 0,
-		cap:        cap,
-		baseDelay:  delay,
+		current:   0,
+		max:       max,
+		baseDelay: min,
 	}
 }
 
 func (s *delayer) Wait() {
-	time.Sleep(s.baseDelay * time.Duration(expOf2(s.currentCap)))
+	time.Sleep(s.current)
 }
 
 func (s *delayer) Inc() {
-	if s.cap < 0 || s.currentCap < uint(s.cap) {
-		s.currentCap++
+	if infinite(int(s.max)) || s.current < s.max {
+		s.current *= 2
+	}
+	if s.current == 0 {
+		s.current = s.baseDelay
 	}
 }
 
 func (s *delayer) Value() time.Duration {
-	return s.baseDelay * time.Duration(expOf2(s.currentCap))
+	return s.current
+}
+
+func infinite(n int) bool {
+	return n < 0
 }

@@ -20,6 +20,7 @@ type Connection struct {
 	state        ConnectionState
 	notifier     Notifier
 	done         <-chan Signal
+	maxAttempts  int
 }
 
 type ConnectionOption func(*Connection)
@@ -30,6 +31,7 @@ func WithLogger(logger logger.Logger) ConnectionOption {
 	}
 }
 
+// WithDelayBuilder changes delay mechanism between attempts
 func WithDelayBuilder(builder DelayBuilder) ConnectionOption {
 	return func(connection *Connection) {
 		connection.delayBuilder = builder
@@ -37,9 +39,9 @@ func WithDelayBuilder(builder DelayBuilder) ConnectionOption {
 }
 
 // Timeout sets delays for connection between attempts.
-func WithTimeout(base time.Duration, cap int) ConnectionOption {
+func WithDelay(base, max time.Duration) ConnectionOption {
 	return func(connection *Connection) {
-		connection.delayBuilder = CommonDelayBuilder(cap, base)
+		connection.delayBuilder = CommonDelayBuilder(max, base)
 	}
 }
 
@@ -47,6 +49,15 @@ func WithTimeout(base time.Duration, cap int) ConnectionOption {
 func WithCancel(cancel <-chan Signal) ConnectionOption {
 	return func(connection *Connection) {
 		connection.done = cancel
+	}
+}
+
+// Attempts sets the maximum attempts to connect/reconnect. When amount rises n, connection stops.
+// When n < 0 Connection tries connect infinitely.
+// -1 by default.
+func Attempts(n int) ConnectionOption {
+	return func(connection *Connection) {
+		connection.maxAttempts = n
 	}
 }
 
@@ -63,6 +74,7 @@ func defaultConnection() Connection {
 		delayBuilder: CommonDelayBuilder(-1, defaultTimeoutBase),
 		logger:       logger.NoopLogger,
 		done:         make(chan Signal),
+		maxAttempts:  -1,
 	}
 }
 
@@ -114,38 +126,47 @@ func Open(conn io.ReadWriteCloser, config amqp.Config, opts ...ConnectionOption)
 
 // connect connects with dialer and listens until connection drops.
 // connect starts itself when connection drops.
-func (c Connection) connect(url string, dialer Dialer) {
+func (c *Connection) connect(url string, dialer Dialer) {
 	c.state.Disconnected()
-	c.logger.Log(2, fmt.Errorf("disconnected from %s", url))
-	timeout := c.delayBuilder()
-	for {
+	c.logger.Log(fmt.Errorf("disconnected from %s", url))
+	delay := c.delayBuilder()
+	i := 0
+ConnectionLoop:
+	for ; infinite(c.maxAttempts) || i < c.maxAttempts; i++ {
 		select {
 		case <-c.done:
 			return
 		default:
-			timeout.Wait()
-			timeout.Inc()
+			delay.Wait()
+			delay.Inc()
 			connection, err := dialer()
 			if err != nil {
-				c.logger.Log(0, fmt.Errorf("dial: %v", err))
+				c.logger.Log(fmt.Errorf("dial: %v", err))
 				continue
 			}
 			c.conn = connection
 			go func() {
-				c.logger.Log(0, fmt.Errorf("connection closed: %v", <-connection.NotifyClose(make(chan *amqp.Error))))
+				c.logger.Log(fmt.Errorf("connection closed: %v", <-connection.NotifyClose(make(chan *amqp.Error))))
 				c.notifier.Notify()
 				c.connect(url, dialer)
 			}()
-			break
+			break ConnectionLoop
 		}
 	}
 	defer c.state.Connected()
-	defer c.logger.Log(2, fmt.Errorf("connected to %s", url))
+	if i == c.maxAttempts {
+		c.logger.Log(MaxAttemptsError)
+		return
+	}
+	defer c.logger.Log(fmt.Errorf("connected to %s", url))
 }
 
-var DeadlineError = errors.New("the deadline was reached")
+var (
+	DeadlineError    = errors.New("the deadline was reached")
+	MaxAttemptsError = errors.New("maximum attempts was reached")
+)
 
-func (c Connection) Wait(timeout time.Duration) error {
+func (c *Connection) Wait(timeout time.Duration) error {
 	return Wait(func(r chan<- struct{}) {
 		defer close(r)
 		c.state.Disconnected()
@@ -155,7 +176,7 @@ func (c Connection) Wait(timeout time.Duration) error {
 }
 
 // WaitInit can be called after one of Client constructors to ensure, that it is ready to serve.
-func (c Connection) WaitInit(timeout time.Duration) error {
+func (c *Connection) WaitInit(timeout time.Duration) error {
 	if timeout <= 0 {
 		timeout = time.Hour
 	}
@@ -168,9 +189,17 @@ func (c Connection) WaitInit(timeout time.Duration) error {
 	}, timeout, DeadlineError)
 }
 
-func (c Connection) NotifyClose() <-chan Signal {
+// NotifyClose notifies user that connection was closed.
+// Channel closes after first notification.
+func (c *Connection) NotifyClose() <-chan Signal {
 	ch := make(chan Signal)
-	c.notifier.Register(ch)
+	if c.state.IsConnected() {
+		c.notifier.Register(ch)
+	} else {
+		go func() {
+			ch <- Signal{}
+		}()
+	}
 	return ch
 }
 

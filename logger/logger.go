@@ -13,3 +13,16 @@ type noopLogger struct{}
 func (noopLogger) Log(v ...interface{}) error {
 	return nil
 }
+
+type chanLogger struct {
+	ch chan<- []interface{}
+}
+
+func NewChanLogger(ch chan<- []interface{}) Logger {
+	return chanLogger{ch: ch}
+}
+
+func (l chanLogger) Log(v ...interface{}) error {
+	l.ch <- v
+	return nil
+}
