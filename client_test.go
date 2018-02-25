@@ -129,7 +129,7 @@ func listenAndPrintln(ch <-chan []interface{}) {
 
 func listenAndPrintlnSuff(suff string, ch <-chan []interface{}) {
 	for e := range ch {
-		fmt.Println(append(e, ch)...)
+		fmt.Println(append(e, suff)...)
 	}
 }
 
