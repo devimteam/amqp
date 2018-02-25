@@ -16,9 +16,9 @@ type (
 	// Connection is a wrapper of amqp.Connection with reconnection ability.
 	Connection struct {
 		conn         *amqp.Connection
-		delayBuilder DelayBuilder
+		delayBuilder TimeoutBuilder
 		logger       logger.Logger
-		state        ConnectionState
+		state        connectionState
 		notifier     Notifier
 		done         <-chan Signal
 		maxAttempts  int
@@ -28,6 +28,7 @@ type (
 	ConnectionOption func(*Connection)
 )
 
+// WithLogger sets logger, which notifies about these events:
 func WithLogger(logger logger.Logger) ConnectionOption {
 	return func(connection *Connection) {
 		connection.logger = logger
@@ -35,7 +36,7 @@ func WithLogger(logger logger.Logger) ConnectionOption {
 }
 
 // WithDelayBuilder changes delay mechanism between attempts
-func WithDelayBuilder(builder DelayBuilder) ConnectionOption {
+func WithDelayBuilder(builder TimeoutBuilder) ConnectionOption {
 	return func(connection *Connection) {
 		connection.delayBuilder = builder
 	}
@@ -44,7 +45,7 @@ func WithDelayBuilder(builder DelayBuilder) ConnectionOption {
 // Timeout sets delays for connection between attempts.
 func WithDelay(base, max time.Duration) ConnectionOption {
 	return func(connection *Connection) {
-		connection.delayBuilder = CommonDelayBuilder(max, base)
+		connection.delayBuilder = CommonTimeoutBuilder(max, base)
 	}
 }
 
@@ -74,67 +75,61 @@ func newConnection(opts ...ConnectionOption) Connection {
 
 func defaultConnection() Connection {
 	return Connection{
-		delayBuilder: CommonDelayBuilder(-1, defaultTimeoutBase),
+		delayBuilder: CommonTimeoutBuilder(-1, defaultTimeoutBase),
 		logger:       logger.NoopLogger,
 		done:         make(chan Signal),
 		maxAttempts:  -1,
 	}
 }
 
-type Dialer func() (*amqp.Connection, error)
-
+// Connection gives direct access to amqp.Connection.
 func (c Connection) Connection() *amqp.Connection {
 	return c.conn
+}
+
+// Dialer setups connection to server.
+type Dialer func() (*amqp.Connection, error)
+
+// DialDialer wraps any Dialer and adds reconnection ability.
+// Never returns error.
+func DialDialer(dialer Dialer, opts ...ConnectionOption) (*Connection, error) {
+	c := newConnection(opts...)
+	c.connect(dialer)
+	return &c, nil
 }
 
 // Dial wraps amqp.Dial function and adds reconnection ability.
 // Never returns error.
 func Dial(url string, opts ...ConnectionOption) (*Connection, error) {
-	c := newConnection(opts...)
-	c.connect(func() (*amqp.Connection, error) {
-		return amqp.Dial(url)
-	})
-	return &c, nil
+	return DialDialer(func() (*amqp.Connection, error) { return amqp.Dial(url) }, opts...)
 }
 
-// Dial wraps amqp.Dial function and adds reconnection ability.
+// DialTLS wraps amqp.DialTLS function and adds reconnection ability.
 // Never returns error.
 func DialTLS(url string, amqps *tls.Config, opts ...ConnectionOption) (*Connection, error) {
-	c := newConnection(opts...)
-	c.connect(func() (*amqp.Connection, error) {
-		return amqp.DialTLS(url, amqps)
-	})
-	return &c, nil
+	return DialDialer(func() (*amqp.Connection, error) { return amqp.DialTLS(url, amqps) }, opts...)
 }
 
-// Dial wraps amqp.Dial function and adds reconnection ability.
+// DialConfig wraps amqp.DialConfig function and adds reconnection ability.
 // Never returns error.
 func DialConfig(url string, config amqp.Config, opts ...ConnectionOption) (*Connection, error) {
-	c := newConnection(opts...)
-	c.connect(func() (*amqp.Connection, error) {
-		return amqp.DialConfig(url, config)
-	})
-	return &c, nil
+	return DialDialer(func() (*amqp.Connection, error) { return amqp.DialConfig(url, config) }, opts...)
 }
 
-// Dial wraps amqp.Dial function and adds reconnection ability.
+// Open wraps amqp.Open function and adds reconnection ability.
 // Never returns error.
 func Open(conn io.ReadWriteCloser, config amqp.Config, opts ...ConnectionOption) (*Connection, error) {
-	c := newConnection(opts...)
-	c.connect(func() (*amqp.Connection, error) {
-		return amqp.Open(conn, config)
-	})
-	return &c, nil
+	return DialDialer(func() (*amqp.Connection, error) { return amqp.Open(conn, config) }, opts...)
 }
 
-// connect connects with dialer and listens until connection drops.
+// connect connects with dialer and listens until connection closes.
 // connect starts itself when connection drops.
 func (c *Connection) connect(dialer Dialer) {
-	c.state.Disconnected()
+	c.state.disconnected()
 	c.logger.Log(Disconnected)
 	attemptNum, delay, delayCh := 0, c.delayBuilder(), make(chan Signal)
 ConnectionLoop:
-	for ; infinite(c.maxAttempts) || attemptNum < c.maxAttempts; attemptNum++ {
+	for ; isInfinite(c.maxAttempts) || attemptNum < c.maxAttempts; attemptNum++ {
 		close(delayCh)
 		delayCh = make(chan Signal)
 		go func() {
@@ -161,7 +156,7 @@ ConnectionLoop:
 			break ConnectionLoop
 		}
 	}
-	defer c.state.Connected()
+	defer c.state.connected()
 	if attemptNum == c.maxAttempts {
 		c.logger.Log(MaxAttemptsError)
 		return
@@ -169,6 +164,7 @@ ConnectionLoop:
 	defer c.logger.Log(Connected)
 }
 
+// Common errors
 var (
 	DeadlineError    = errors.New("the deadline was reached")
 	MaxAttemptsError = errors.New("maximum attempts was reached")
@@ -177,12 +173,13 @@ var (
 	Connected        = errors.New("connected")
 )
 
+// Wait waits until connection is ready to serve.
 func (c *Connection) Wait(timeout time.Duration) error {
-	return Wait(func(r chan<- struct{}) {
+	return timeoutPattern(func(r chan<- Signal) {
 		defer close(r)
-		c.state.Disconnected()
-		c.state.Connected()
-		r <- struct{}{}
+		c.state.disconnected()
+		c.state.connected()
+		r <- Signal{}
 	}, timeout, DeadlineError)
 }
 
@@ -191,12 +188,12 @@ func (c *Connection) WaitInit(timeout time.Duration) error {
 	if timeout <= 0 {
 		timeout = time.Minute
 	}
-	return Wait(func(r chan<- struct{}) {
+	return timeoutPattern(func(r chan<- Signal) {
 		defer close(r)
 		for c.conn == nil {
 			time.Sleep(time.Millisecond * 100)
 		}
-		r <- struct{}{}
+		r <- Signal{}
 	}, timeout, DeadlineError)
 }
 
@@ -204,7 +201,7 @@ func (c *Connection) WaitInit(timeout time.Duration) error {
 // Channel closes after first notification.
 func (c *Connection) NotifyClose() <-chan Signal {
 	ch := make(chan Signal)
-	if c.state.IsConnected() {
+	if c.state.isConnected() {
 		c.notifier.Register(ch)
 	} else {
 		go func() {
@@ -214,32 +211,12 @@ func (c *Connection) NotifyClose() <-chan Signal {
 	return ch
 }
 
-type ConnectionState struct {
-	mx     sync.Mutex
-	locked bool
+func (c *Connection) Close() error {
+	c.done <- Signal{}
+	return c.conn.Close()
 }
 
-func (s *ConnectionState) Connected() {
-	s.locked = false
-	s.mx.Unlock()
-}
-func (s *ConnectionState) Disconnected() {
-	s.mx.Lock()
-	s.locked = true
-}
-func (s *ConnectionState) IsConnected() bool { return !s.locked }
-
-func Wait(fn func(chan<- struct{}), timeout time.Duration, deadlineErr error) error {
-	r := make(chan struct{})
-	go fn(r)
-	select {
-	case <-r:
-		return nil
-	case <-time.After(timeout):
-		return deadlineErr
-	}
-}
-
+// Signal is shortcut for struct{}.
 type Signal struct{}
 
 // Notifier notify receivers when something happen.
@@ -267,3 +244,18 @@ func (d *Notifier) Notify() {
 	}
 	d.receivers = []chan<- Signal{}
 }
+
+type connectionState struct {
+	mx     sync.Mutex
+	locked bool
+}
+
+func (s *connectionState) connected() {
+	s.locked = false
+	s.mx.Unlock()
+}
+func (s *connectionState) disconnected() {
+	s.mx.Lock()
+	s.locked = true
+}
+func (s *connectionState) isConnected() bool { return !s.locked }

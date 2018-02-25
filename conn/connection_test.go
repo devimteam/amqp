@@ -99,7 +99,7 @@ func listenAndPrintln(ch <-chan []interface{}) {
 		fmt.Println(e...)
 	}
 }
-func testDelayBuilder() Delayer {
+func testDelayBuilder() Timeouter {
 	return testDelayer{}
 }
 

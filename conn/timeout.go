@@ -2,17 +2,28 @@ package conn
 
 import "time"
 
-const defaultTimeoutBase = time.Second
-
-type DelayBuilder func() Delayer
-
-func CommonDelayBuilder(max, min time.Duration) DelayBuilder {
-	return func() Delayer {
-		return CommonDelayer(max, min)
+func timeoutPattern(fn func(chan<- Signal), timeout time.Duration, deadlineErr error) error {
+	r := make(chan Signal)
+	go fn(r)
+	select {
+	case <-r:
+		return nil
+	case <-time.After(timeout):
+		return deadlineErr
 	}
 }
 
-type Delayer interface {
+const defaultTimeoutBase = time.Second
+
+type TimeoutBuilder func() Timeouter
+
+func CommonTimeoutBuilder(max, min time.Duration) TimeoutBuilder {
+	return func() Timeouter {
+		return CommonTimeouter(max, min)
+	}
+}
+
+type Timeouter interface {
 	Wait() // Wait for period of time.
 	Inc()  // Increase duration of next Wait call.
 }
@@ -23,7 +34,7 @@ type delayer struct {
 	baseDelay time.Duration
 }
 
-func CommonDelayer(max, min time.Duration) Delayer {
+func CommonTimeouter(max, min time.Duration) Timeouter {
 	return &delayer{
 		current:   0,
 		max:       max,
@@ -36,7 +47,7 @@ func (s *delayer) Wait() {
 }
 
 func (s *delayer) Inc() {
-	if infinite(int(s.max)) || s.current < s.max {
+	if isInfinite(int(s.max)) || s.current < s.max {
 		s.current *= 2
 	}
 	if s.current == 0 {
@@ -48,6 +59,6 @@ func (s *delayer) Value() time.Duration {
 	return s.current
 }
 
-func infinite(n int) bool {
+func isInfinite(n int) bool {
 	return n < 0
 }
