@@ -36,7 +36,7 @@ type QueueConfig struct {
 func DefaultQueueConfig() QueueConfig {
 	return QueueConfig{
 		Name:       "",
-		Durable:    true,
+		Durable:    false,
 		AutoDelete: false,
 		Exclusive:  false,
 		NoWait:     false,

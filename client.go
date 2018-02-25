@@ -117,6 +117,9 @@ func (c Client) listen(exchangeName string, replyType interface{}, eventChan cha
 	}()
 }
 
+// Durable or non-auto-delete queues with empty names will survive when all consumers have finished using it, but no one can connect to it back.
+var queueDeclareWarning = "declaring durable or non-auto-delete queue with empty name"
+
 func (c Client) prepareDeliveryChan(
 	channel *amqp.Channel,
 	exchangeName string,
@@ -127,8 +130,8 @@ func (c Client) prepareDeliveryChan(
 	if err != nil {
 		return nil, "", fmt.Errorf("exchange declare err: %v", err)
 	}
-	if c.cfgs.queue.Name == "" {
-		c.cfgs.queue.Name = genRandomQueueName()
+	if c.cfgs.queue.Name == "" && (c.cfgs.queue.Durable || !c.cfgs.queue.AutoDelete) {
+		c.opts.log.warn.Log(queueDeclareWarning)
 	}
 	c.opts.log.debug.Log(fmt.Errorf("queue(%s) declare", c.cfgs.queue.Name))
 	q, err := c.channelQueueDeclare(channel, c.cfgs.queue)
