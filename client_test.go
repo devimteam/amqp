@@ -110,13 +110,13 @@ func TestHighLoad(t *testing.T) {
 	time.Sleep(time.Second * 2)
 }
 
-func subFunc(prefix string, client Client, options ...ClientOption) {
+func subFunc(prefix string, client Client, options ...ClientConfig) {
 	ch := make(chan []interface{})
 	go listenAndPrintln(ch)
 	events, _ := client.Sub(testExchangeName, X{}, append(options, WithOptions(AllLoggers(logger.NewChanLogger(ch))))...)
 	for ev := range events {
 		fmt.Println(prefix, "event data: ", ev.Data)
-		ev.Commit()
+		ev.Done()
 	}
 	fmt.Println("end of events")
 }

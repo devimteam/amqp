@@ -1,3 +1,4 @@
+// Please, check https://www.rabbitmq.com/amqp-0-9-1-reference.html to learn about configs parameters.
 package amqp
 
 import "github.com/streadway/amqp"
@@ -183,3 +184,5 @@ func channelQueueBind(channel *amqp.Channel, queueName, exchangeName string, que
 		queueBindCfg.Args,
 	)
 }
+
+// todo: add common configurations for: 1. durable exchange, where every event is important, 2. exchange with temporary queries

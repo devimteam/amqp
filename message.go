@@ -30,6 +30,7 @@ type (
 
 var CodecNotFound = errors.New("codec not found")
 
+// constructPublishing uses message options to construct amqp.Publishing.
 func constructPublishing(v interface{}, opts *messageOptions) (msg amqp.Publishing, err error) {
 	msg.AppId = opts.applicationId
 	msg.MessageId = opts.idBuilder()

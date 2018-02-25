@@ -13,6 +13,16 @@ import (
 	"github.com/streadway/amqp"
 )
 
+type Event struct {
+	Data    interface{}     // converted and ready to use entity of reply type.
+	Context context.Context // event's context.
+	amqp.Delivery
+}
+
+func (e Event) Done() {
+	e.Ack(false)
+}
+
 type Client struct {
 	cfgs configs
 	opts options
@@ -23,19 +33,19 @@ type Client struct {
 	}
 }
 
-func NewClientWithConnection(conn *conn.Connection, opts ...ClientOption) (cl Client) {
+func NewClientWithConnection(conn *conn.Connection, cfgs ...ClientConfig) (cl Client) {
 	cl.opts = defaultOptions()
 	cl.cfgs = newConfigs()
 	cl.conn = conn
-	applyOptions(&cl, opts...)
+	applyConfigs(&cl, cfgs...)
 	conn.WaitInit(0)
 	return
 }
 
-func NewClient(url string, opts ...ClientOption) (cl Client, err error) {
+func NewClient(url string, cfgs ...ClientConfig) (cl Client, err error) {
 	cl.opts = defaultOptions()
 	cl.cfgs = newConfigs()
-	applyOptions(&cl, opts...)
+	applyConfigs(&cl, cfgs...)
 	if cl.cfgs.conn != nil {
 		cl.conn, _ = conn.DialConfig(url, *cl.cfgs.conn, cl.opts.connOpts...)
 	} else {
@@ -45,8 +55,8 @@ func NewClient(url string, opts ...ClientOption) (cl Client, err error) {
 	return
 }
 
-func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opts ...ClientOption) error {
-	applyOptions(&c, opts...)
+func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opts ...ClientConfig) error {
+	applyConfigs(&c, opts...)
 	if c.opts.wait.flag {
 		err := c.conn.Wait(c.opts.wait.timeout)
 		if err != nil {
@@ -76,15 +86,15 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 	return nil
 }
 
-func (c Client) Sub(exchangeName string, replyType interface{}, opts ...ClientOption) (<-chan Event, chan<- conn.Signal) {
+func (c Client) Sub(exchangeName string, replyType interface{}, opts ...ClientConfig) (<-chan Event, chan<- conn.Signal) {
 	eventChan := make(chan Event, c.opts.subEventChanBuffer)
 	doneCh := make(chan conn.Signal)
 	go c.listen(exchangeName, replyType, eventChan, doneCh, opts...)
 	return eventChan, doneCh
 }
 
-func (c Client) listen(exchangeName string, replyType interface{}, eventChan chan<- Event, doneChan <-chan conn.Signal, opts ...ClientOption) {
-	applyOptions(&c, opts...)
+func (c Client) listen(exchangeName string, replyType interface{}, eventChan chan<- Event, doneChan <-chan conn.Signal, opts ...ClientConfig) {
+	applyConfigs(&c, opts...)
 	if c.opts.wait.flag {
 		err := c.conn.Wait(c.opts.wait.timeout)
 		if err != nil {
@@ -134,23 +144,24 @@ func (c Client) prepareDeliveryChan(
 		c.opts.log.warn.Log(queueDeclareWarning)
 	}
 	c.opts.log.debug.Log(fmt.Errorf("queue(%s) declare", c.cfgs.queue.Name))
-	q, err := c.channelQueueDeclare(channel, c.cfgs.queue)
+	queue, err := c.channelQueueDeclare(channel, c.cfgs.queue)
 	if err != nil {
 		return nil, "", fmt.Errorf("queue declare err: %v", err)
 	}
-	c.opts.log.debug.Log(fmt.Errorf("bind queue(%s) to exchange(%s)", q.Name, exchangeName))
-	err = channelQueueBind(channel, q.Name, exchangeName, c.cfgs.queueBind)
+	c.opts.log.debug.Log(fmt.Errorf("bind queue(%s) to exchange(%s)", queue.Name, exchangeName))
+	err = channelQueueBind(channel, queue.Name, exchangeName, c.cfgs.queueBind)
 	if err != nil {
 		return nil, "", fmt.Errorf("queue bind err: %v", err)
 	}
-	c.opts.log.debug.Log(fmt.Errorf("consume from queue(%s)", q.Name))
-	ch, err := channelConsume(channel, q.Name, c.cfgs.consume)
+	c.opts.log.debug.Log(fmt.Errorf("consume from queue(%s)", queue.Name))
+	ch, err := channelConsume(channel, queue.Name, c.cfgs.consume)
 	if err != nil {
 		return nil, "", fmt.Errorf("channel consume err: %v", err)
 	}
-	return ch, q.Name, nil
+	return ch, queue.Name, nil
 }
 
+// processersPool wraps processEvents with WorkerPool pattern.
 func (c Client) processersPool(
 	queueName, exchangeName string,
 	channel *amqp.Channel,
@@ -263,52 +274,52 @@ func (c Client) errorBefore(d amqp.Delivery, err error) error {
 	return err
 }
 
-type ClientOption func(*Client)
+type ClientConfig func(*Client)
 
-func applyOptions(cl *Client, opts ...ClientOption) {
+func applyConfigs(cl *Client, opts ...ClientConfig) {
 	for i := range opts {
 		opts[i](cl)
 	}
 }
 
-func SetDefaultExchangeConfig(cfg ExchangeConfig) ClientOption {
+func SetExchangeConfig(cfg ExchangeConfig) ClientConfig {
 	return func(client *Client) {
 		client.cfgs.exchange = cfg
 	}
 }
 
-func SetDefaultQueueConfig(cfg QueueConfig) ClientOption {
+func SetQueueConfig(cfg QueueConfig) ClientConfig {
 	return func(client *Client) {
 		client.cfgs.queue = cfg
 	}
 }
 
-func SetDefaultQueueBindConfig(cfg QueueBindConfig) ClientOption {
+func SetQueueBindConfig(cfg QueueBindConfig) ClientConfig {
 	return func(client *Client) {
 		client.cfgs.queueBind = cfg
 	}
 }
 
-func SetDefaultConsumeConfig(cfg ConsumeConfig) ClientOption {
+func SetConsumeConfig(cfg ConsumeConfig) ClientConfig {
 	return func(client *Client) {
 		client.cfgs.consume = cfg
 	}
 }
 
-func SetDefaultPublishConfig(cfg PublishConfig) ClientOption {
+func SetPublishConfig(cfg PublishConfig) ClientConfig {
 	return func(client *Client) {
 		client.cfgs.publish = cfg
 	}
 }
 
-// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub calls.
-func WithConfig(config amqp.Config) ClientOption {
+// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub functions.
+func WithConfig(config amqp.Config) ClientConfig {
 	return func(client *Client) {
 		client.cfgs.conn = &config
 	}
 }
 
-func WithOptions(opts ...Option) ClientOption {
+func WithOptions(opts ...Option) ClientConfig {
 	return func(client *Client) {
 		for i := range opts {
 			opts[i](&client.opts)
@@ -316,9 +327,9 @@ func WithOptions(opts ...Option) ClientOption {
 	}
 }
 
-// Use this options to create new connection.
-// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub function.
-func WithConnOptions(opts ...conn.ConnectionOption) ClientOption {
+// WithConnOptions sets options that should be used to create new connection.
+// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub functions.
+func WithConnOptions(opts ...conn.ConnectionOption) ClientConfig {
 	return func(client *Client) {
 		client.opts.connOpts = append(client.opts.connOpts, opts...)
 	}
