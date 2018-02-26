@@ -210,6 +210,13 @@ func LazyDeclaring(v bool) Option {
 	}
 }
 
+// SetDefaultContentType sets content type which codec should be used if ContentType field of message is empty.
+func SetDefaultContentType(t string) Option {
+	return func(options *options) {
+		options.msgOpts.defaultContentType = t
+	}
+}
+
 var noopMessageIdBuilder = func() string {
 	return ""
 }

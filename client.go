@@ -285,6 +285,31 @@ func applyConfigs(cl *Client, opts ...ClientConfig) {
 	}
 }
 
+// Sets amqp.Config which is used to dial to broker.
+// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub functions.
+func WithConfig(config amqp.Config) ClientConfig {
+	return func(client *Client) {
+		client.cfgs.conn = &config
+	}
+}
+
+// WithOptions uses given options to configure and tune Client.
+func WithOptions(opts ...Option) ClientConfig {
+	return func(client *Client) {
+		for i := range opts {
+			opts[i](&client.opts)
+		}
+	}
+}
+
+// WithConnOptions sets options that should be used to create new connection.
+// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub functions.
+func WithConnOptions(opts ...conn.ConnectionOption) ClientConfig {
+	return func(client *Client) {
+		client.opts.connOpts = append(client.opts.connOpts, opts...)
+	}
+}
+
 func SetExchangeConfig(cfg ExchangeConfig) ClientConfig {
 	return func(client *Client) {
 		client.cfgs.exchange = cfg
@@ -312,28 +337,5 @@ func SetConsumeConfig(cfg ConsumeConfig) ClientConfig {
 func SetPublishConfig(cfg PublishConfig) ClientConfig {
 	return func(client *Client) {
 		client.cfgs.publish = cfg
-	}
-}
-
-// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub functions.
-func WithConfig(config amqp.Config) ClientConfig {
-	return func(client *Client) {
-		client.cfgs.conn = &config
-	}
-}
-
-func WithOptions(opts ...Option) ClientConfig {
-	return func(client *Client) {
-		for i := range opts {
-			opts[i](&client.opts)
-		}
-	}
-}
-
-// WithConnOptions sets options that should be used to create new connection.
-// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub functions.
-func WithConnOptions(opts ...conn.ConnectionOption) ClientConfig {
-	return func(client *Client) {
-		client.opts.connOpts = append(client.opts.connOpts, opts...)
 	}
 }
