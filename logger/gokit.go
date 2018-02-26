@@ -1,6 +1,6 @@
 package logger
 
-func GOKITAdapter(logger Logger) Logger {
+func GoKitAdapter(logger Logger) Logger {
 	return gokitAdapter{next: logger}
 }
 

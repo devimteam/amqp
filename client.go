@@ -67,6 +67,7 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 	if err != nil {
 		return WrapError("new channel", err)
 	}
+	defer channel.Close()
 	err = c.channelExchangeDeclare(channel, exchangeName, c.cfgs.exchange)
 	if err != nil {
 		return WrapError("declare exchange", err)
@@ -112,7 +113,7 @@ func (c Client) listen(exchangeName string, replyType interface{}, eventChan cha
 		return
 	}
 	c.processersPool(queueName, exchangeName, channel, deliveryCh, replyType, eventChan, doneChan)
-	defer func() {
+	go func() {
 		select {
 		case <-doneChan:
 			if channel != nil {
