@@ -27,10 +27,6 @@ type Client struct {
 	cfgs configs
 	opts options
 	conn *conn.Connection
-	lazy struct {
-		exchangesDeclared SyncedStringSlice
-		queueDeclared     SyncedStringSlice
-	}
 }
 
 func NewClientWithConnection(conn *conn.Connection, cfgs ...ClientConfig) (cl Client) {
@@ -52,6 +48,16 @@ func NewClient(url string, cfgs ...ClientConfig) (cl Client, err error) {
 		cl.conn, _ = conn.Dial(url, cl.opts.connOpts...)
 	}
 	err = cl.conn.WaitInit(0)
+	if cl.opts.lazy.declaring {
+		go func() {
+			// drop lists of declared exchanges and queues when connection drops.
+			for ; ; time.Sleep(time.Minute) {
+				<-cl.conn.NotifyClose()
+				cl.opts.lazy.exchangesDeclared.Drop()
+				cl.opts.lazy.queueDeclared.Drop()
+			}
+		}()
+	}
 	return
 }
 
@@ -130,8 +136,14 @@ func (c Client) listen(exchangeName string, dataType interface{}, eventChan chan
 	}()
 }
 
-// Durable or non-auto-delete queues with empty names will survive when all consumers have finished using it, but no one can connect to it back.
-var queueDeclareWarning = "declaring durable or non-auto-delete queue with empty name"
+var (
+	NotAllowedPriority            = errors.New("not allowed priority")
+	DeliveryChannelWasClosedError = errors.New("delivery channel was closed")
+	// Durable or non-auto-delete queues with empty names will survive when all consumers have finished using it, but no one can connect to it back.
+	QueueDeclareWarning = errors.New("declaring durable or non-auto-delete queue with empty name")
+	// You should use LazyDeclaring option only in Client constructors.
+	LazyDeclaringFatal = errors.New("LazyDeclaring not available as option for this method")
+)
 
 func (c Client) prepareDeliveryChan(
 	channel *amqp.Channel,
@@ -144,7 +156,7 @@ func (c Client) prepareDeliveryChan(
 		return nil, "", fmt.Errorf("exchange declare err: %v", err)
 	}
 	if c.cfgs.queue.Name == "" && (c.cfgs.queue.Durable || !c.cfgs.queue.AutoDelete) {
-		c.opts.log.warn.Log(queueDeclareWarning)
+		c.opts.log.warn.Log(QueueDeclareWarning)
 	}
 	c.opts.log.debug.Log(fmt.Errorf("queue(%s) declare", c.cfgs.queue.Name))
 	queue, err := c.channelQueueDeclare(channel, c.cfgs.queue)
@@ -183,8 +195,6 @@ func (c Client) processersPool(
 	}
 	wg.Wait()
 }
-
-var DeliveryChannelWasClosedError = errors.New("delivery channel was closed")
 
 func (c Client) processEvents(
 	queueName, exchangeName string,
@@ -238,8 +248,6 @@ func (c Client) processEvent(d amqp.Delivery, dataType interface{}, eventChan ch
 	}
 	eventChan <- ev
 }
-
-var NotAllowedPriority = errors.New("not allowed priority")
 
 func (c Client) checkEvent(d amqp.Delivery) error {
 	priorityOk := c.opts.msgOpts.minPriority <= d.Priority && d.Priority <= c.opts.msgOpts.maxPriority

@@ -150,9 +150,17 @@ ConnectionLoop:
 			}
 			c.conn = connection
 			go func() {
-				c.logger.Log(fmt.Errorf("connection closed: %v", <-connection.NotifyClose(make(chan *amqp.Error))))
-				c.notifier.Notify()
-				c.connect(dialer)
+				select {
+				case e := <-connection.NotifyClose(make(chan *amqp.Error)):
+					c.logger.Log(fmt.Errorf("connection closed: %v", e))
+					c.notifier.Notify()
+					c.connect(dialer)
+				case <-c.done:
+					c.logger.Log(CanceledError)
+					connection.Close()
+					c.notifier.Notify()
+					return
+				}
 			}()
 			break ConnectionLoop
 		}

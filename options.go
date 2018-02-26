@@ -12,6 +12,7 @@ import (
 )
 
 type (
+	Option func(*options)
 	// Options is a struct with almost all possible options of Client.
 	options struct {
 		wait struct {
@@ -34,8 +35,12 @@ type (
 		processAllDeliveries bool
 		handlersAmount       int
 		errorBefore          []ErrorBefore
-		lazyCommands         bool
-		connOpts             []conn.ConnectionOption
+		lazy                 struct {
+			declaring         bool
+			exchangesDeclared *SyncedStringSlice
+			queueDeclared     *SyncedStringSlice
+		}
+		connOpts []conn.ConnectionOption
 	}
 
 	// Function, that should return new message Id.
@@ -79,8 +84,6 @@ func defaultOptions() options {
 	opts.msgOpts.defaultContentType = "application/json"
 	return opts
 }
-
-type Option func(*options)
 
 // WaitConnection tells client to wait connection before Sub or Pub executing.
 func WaitConnection(should bool, timeout time.Duration) Option {
@@ -174,6 +177,7 @@ func AllLoggers(lg logger.Logger) Option {
 	}
 }
 
+// PublishBefore adds functions, that should be called before publishing message to broker.
 func PublishBefore(before ...PublishingBefore) Option {
 	return func(options *options) {
 		for i := range before {
@@ -182,6 +186,7 @@ func PublishBefore(before ...PublishingBefore) Option {
 	}
 }
 
+// DeliverBefore adds functions, that should be called before sending Event to channel.
 func DeliverBefore(before ...DeliveryBefore) Option {
 	return func(options *options) {
 		for i := range before {
@@ -210,9 +215,15 @@ func HandlersAmount(n int) Option {
 // LazyDeclaring option with true value tells the Client not to declare exchanges and queues
 // if it was declared before by this Client.
 // By default client declares it on every Sub loop and every Pub call.
+// Panics if not passed as one of Client's constructors.
 func LazyDeclaring(v bool) Option {
 	return func(options *options) {
-		options.lazyCommands = v
+		if options.lazy.exchangesDeclared != nil || options.lazy.queueDeclared != nil {
+			panic(LazyDeclaringFatal)
+		}
+		options.lazy.declaring = v
+		options.lazy.queueDeclared = &SyncedStringSlice{}
+		options.lazy.exchangesDeclared = &SyncedStringSlice{}
 	}
 }
 
@@ -231,10 +242,12 @@ var noopTyper = func(_ interface{}) string {
 	return ""
 }
 
+// CommonTyper prints go-style type of value.
 func CommonTyper(v interface{}) string {
 	return fmt.Sprintf("%T", v)
 }
 
+// CommonMessageIdBuilder builds new UUID as message Id.
 func CommonMessageIdBuilder() string {
 	return uuid.NewV4().String()
 }

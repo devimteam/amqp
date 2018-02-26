@@ -138,12 +138,12 @@ func channelConsume(channel *amqp.Channel, queueName string, consumeCfg ConsumeC
 }
 
 func (c Client) channelExchangeDeclare(channel *amqp.Channel, exchangeName string, exchangeCfg ExchangeConfig) (err error) {
-	if c.opts.lazyCommands && c.lazy.exchangesDeclared.Find(exchangeName) >= 0 {
+	if c.opts.lazy.declaring && c.opts.lazy.exchangesDeclared.Find(exchangeName) >= 0 {
 		return nil
 	}
 	defer func() {
-		if err == nil && c.opts.lazyCommands && c.lazy.exchangesDeclared.Find(exchangeName) == -1 {
-			c.lazy.exchangesDeclared.Append(exchangeName)
+		if err == nil && c.opts.lazy.declaring && c.opts.lazy.exchangesDeclared.Find(exchangeName) == -1 {
+			c.opts.lazy.exchangesDeclared.Append(exchangeName)
 		}
 	}()
 	return channel.ExchangeDeclare(
@@ -158,12 +158,12 @@ func (c Client) channelExchangeDeclare(channel *amqp.Channel, exchangeName strin
 }
 
 func (c Client) channelQueueDeclare(channel *amqp.Channel, queueCfg QueueConfig) (q amqp.Queue, err error) {
-	if c.opts.lazyCommands && c.lazy.queueDeclared.Find(queueCfg.Name) >= 0 {
+	if c.opts.lazy.declaring && c.opts.lazy.queueDeclared.Find(queueCfg.Name) >= 0 {
 		return amqp.Queue{Name: queueCfg.Name}, nil
 	}
 	defer func() {
-		if err == nil && c.opts.lazyCommands && c.lazy.queueDeclared.Find(q.Name) == -1 {
-			c.lazy.queueDeclared.Append(q.Name)
+		if err == nil && c.opts.lazy.declaring && c.opts.lazy.queueDeclared.Find(q.Name) == -1 {
+			c.opts.lazy.queueDeclared.Append(q.Name)
 		}
 	}()
 	return channel.QueueDeclare(

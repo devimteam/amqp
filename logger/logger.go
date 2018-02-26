@@ -1,3 +1,4 @@
+// Represents logger interface and common loggers.
 package logger
 
 // Logger represents logger interface that used to log messages.

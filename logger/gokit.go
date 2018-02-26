@@ -12,5 +12,5 @@ func (a gokitAdapter) Log(vals ...interface{}) error {
 	if len(vals) == 1 {
 		return a.next.Log("message", vals[0])
 	}
-	return a.next.Log()
+	return a.next.Log(vals...)
 }

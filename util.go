@@ -9,9 +9,10 @@ import (
 )
 
 var randomSymbols = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+var rander *rand.Rand
 
 func init() {
-	rand.Seed(time.Now().Unix())
+	rander = rand.New(rand.NewSource(time.Now().Unix()))
 }
 
 var QueuePrefix = "queue-"
@@ -24,7 +25,7 @@ func genRandomString(length int) string {
 	n := len(randomSymbols)
 	b := make([]rune, length)
 	for i := range b {
-		b[i] = randomSymbols[rand.Intn(n)]
+		b[i] = randomSymbols[rander.Intn(n)]
 	}
 	return string(b)
 }
@@ -80,4 +81,10 @@ func (s *SyncedStringSlice) Find(str string) int {
 		}
 	}
 	return -1
+}
+
+func (s *SyncedStringSlice) Drop() {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	s.slice = make([]string, 1)
 }
