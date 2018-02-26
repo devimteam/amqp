@@ -20,7 +20,7 @@ type (
 		logger       logger.Logger
 		state        connectionState
 		notifier     Notifier
-		done         <-chan Signal
+		done         chan Signal
 		maxAttempts  int
 	}
 
@@ -50,7 +50,7 @@ func WithDelay(base, max time.Duration) ConnectionOption {
 }
 
 // WithCancel gives ability to stop connection loop, when cancel channel closes or something sends to it.
-func WithCancel(cancel <-chan Signal) ConnectionOption {
+func WithCancel(cancel chan Signal) ConnectionOption {
 	return func(connection *Connection) {
 		connection.done = cancel
 	}

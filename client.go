@@ -88,7 +88,7 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 	return nil
 }
 
-// Sub subscribes to exchange and consume deliveries and converts its body field to given dataType.
+// Sub subscribes to exchange and consume deliveries and converts their Body field to given dataType.
 func (c Client) Sub(exchangeName string, dataType interface{}, opts ...ClientConfig) (<-chan Event, chan<- conn.Signal) {
 	eventChan := make(chan Event, c.opts.subEventChanBuffer)
 	doneCh := make(chan conn.Signal)
