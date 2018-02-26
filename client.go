@@ -35,7 +35,7 @@ type Client struct {
 	conn *conn.Connection
 }
 
-// Use this function if you want to pass conn directly. Otherwise, please use NewClient.
+// NewClientWithConnection is used when you want to pass connection directly. Otherwise, please use NewClient.
 func NewClientWithConnection(conn *conn.Connection, cfgs ...ClientConfig) (cl Client, err error) {
 	cl.constructorBefore(cfgs...)
 	cl.conn = conn
