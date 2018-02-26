@@ -55,6 +55,7 @@ func NewClient(url string, cfgs ...ClientConfig) (cl Client, err error) {
 	return
 }
 
+// Pub publishes v to exchange.
 func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opts ...ClientConfig) error {
 	applyConfigs(&c, opts...)
 	if c.opts.wait.flag {
@@ -87,14 +88,15 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 	return nil
 }
 
-func (c Client) Sub(exchangeName string, replyType interface{}, opts ...ClientConfig) (<-chan Event, chan<- conn.Signal) {
+// Sub subscribes to exchange and consume deliveries and converts its body field to given dataType.
+func (c Client) Sub(exchangeName string, dataType interface{}, opts ...ClientConfig) (<-chan Event, chan<- conn.Signal) {
 	eventChan := make(chan Event, c.opts.subEventChanBuffer)
 	doneCh := make(chan conn.Signal)
-	go c.listen(exchangeName, replyType, eventChan, doneCh, opts...)
+	go c.listen(exchangeName, dataType, eventChan, doneCh, opts...)
 	return eventChan, doneCh
 }
 
-func (c Client) listen(exchangeName string, replyType interface{}, eventChan chan<- Event, doneChan <-chan conn.Signal, opts ...ClientConfig) {
+func (c Client) listen(exchangeName string, dataType interface{}, eventChan chan<- Event, doneChan <-chan conn.Signal, opts ...ClientConfig) {
 	applyConfigs(&c, opts...)
 	if c.opts.wait.flag {
 		err := c.conn.Wait(c.opts.wait.timeout)
@@ -112,7 +114,7 @@ func (c Client) listen(exchangeName string, replyType interface{}, eventChan cha
 		c.opts.log.error.Log(err)
 		return
 	}
-	c.processersPool(queueName, exchangeName, channel, deliveryCh, replyType, eventChan, doneChan)
+	c.processersPool(queueName, exchangeName, channel, deliveryCh, dataType, eventChan, doneChan)
 	go func() {
 		select {
 		case <-doneChan:
@@ -123,7 +125,7 @@ func (c Client) listen(exchangeName string, replyType interface{}, eventChan cha
 			}
 			return
 		default:
-			c.listen(exchangeName, replyType, eventChan, doneChan, opts...)
+			c.listen(exchangeName, dataType, eventChan, doneChan, opts...)
 		}
 	}()
 }
@@ -167,7 +169,7 @@ func (c Client) processersPool(
 	queueName, exchangeName string,
 	channel *amqp.Channel,
 	deliveryCh <-chan amqp.Delivery,
-	replyType interface{},
+	dataType interface{},
 	eventChan chan<- Event,
 	doneChan <-chan conn.Signal,
 ) {
@@ -175,7 +177,7 @@ func (c Client) processersPool(
 	wg.Add(c.opts.handlersAmount)
 	for i := 0; i < c.opts.handlersAmount; i++ {
 		go func() {
-			c.processEvents(queueName, exchangeName, channel, deliveryCh, replyType, eventChan, doneChan)
+			c.processEvents(queueName, exchangeName, channel, deliveryCh, dataType, eventChan, doneChan)
 			wg.Done()
 		}()
 	}
@@ -188,7 +190,7 @@ func (c Client) processEvents(
 	queueName, exchangeName string,
 	channel *amqp.Channel,
 	deliveryCh <-chan amqp.Delivery,
-	replyType interface{},
+	dataType interface{},
 	eventChan chan<- Event,
 	doneChan <-chan conn.Signal,
 ) {
@@ -202,7 +204,7 @@ func (c Client) processEvents(
 				return
 			}
 			c.opts.log.debug.Log(fmt.Errorf("process delivery %s", d.MessageId))
-			c.processEvent(d, replyType, eventChan)
+			c.processEvent(d, dataType, eventChan)
 		case <-doneChan:
 			if c.opts.processAllDeliveries && processedAll {
 				close(eventChan)
@@ -213,7 +215,7 @@ func (c Client) processEvents(
 	}
 }
 
-func (c Client) processEvent(d amqp.Delivery, replyType interface{}, eventChan chan<- Event) {
+func (c Client) processEvent(d amqp.Delivery, dataType interface{}, eventChan chan<- Event) {
 	err := c.checkEvent(d)
 	if err != nil {
 		err = c.errorBefore(d, err)
@@ -224,7 +226,7 @@ func (c Client) processEvent(d amqp.Delivery, replyType interface{}, eventChan c
 		}
 		return
 	}
-	ev, err := c.handleEvent(d, replyType)
+	ev, err := c.handleEvent(d, dataType)
 	if err != nil {
 		err = c.errorBefore(d, err)
 		c.opts.log.warn.Log(err)
@@ -247,7 +249,7 @@ func (c Client) checkEvent(d amqp.Delivery) error {
 	return nil
 }
 
-func (c Client) handleEvent(d amqp.Delivery, replyType interface{}) (ev Event, err error) {
+func (c Client) handleEvent(d amqp.Delivery, dataType interface{}) (ev Event, err error) {
 	ctx := c.opts.context
 	for _, before := range c.opts.msgOpts.deliveryBefore {
 		ctx = before(ctx, &d)
@@ -258,7 +260,7 @@ func (c Client) handleEvent(d amqp.Delivery, replyType interface{}) (ev Event, e
 	if !ok {
 		return ev, CodecNotFound
 	}
-	data := reflect.New(reflect.Indirect(reflect.ValueOf(replyType)).Type()).Interface()
+	data := reflect.New(reflect.Indirect(reflect.ValueOf(dataType)).Type()).Interface()
 	err = codec.Decode(d.Body, data)
 	if err != nil {
 		return
