@@ -1,3 +1,4 @@
+// Package conn adds to https://github.com/streadway/amqp Connection ability to reconnect and some optional parameters.
 package conn
 
 import (

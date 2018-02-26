@@ -38,11 +38,17 @@ type (
 		connOpts             []conn.ConnectionOption
 	}
 
-	MessageIdBuilder func() string                                         // Function, that should return new message Id.
-	Typer            func(value interface{}) string                        // Function, that should return string representation of type's value.
-	PublishingBefore func(context.Context, *amqp.Publishing)               // Function, that changes message before publishing.
-	DeliveryBefore   func(context.Context, *amqp.Delivery) context.Context // Function, that changes message before delivering.
-	ErrorBefore      func(amqp.Delivery, error) error                      // Function, that changes error, which caused on incorrect handling.
+	// Function, that should return new message Id.
+	MessageIdBuilder func() string
+	// Function, that should return string representation of type's value.
+	Typer func(value interface{}) string
+	// Function, that changes message before publishing.
+	PublishingBefore func(context.Context, *amqp.Publishing)
+	// Function, that changes message before delivering.
+	DeliveryBefore func(context.Context, *amqp.Delivery) context.Context
+	// Function, that changes error, which caused on incorrect handling.
+	// Common use-case: debugging.
+	ErrorBefore func(amqp.Delivery, error) error
 )
 
 const (

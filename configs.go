@@ -1,4 +1,5 @@
 // Please, check https://www.rabbitmq.com/amqp-0-9-1-reference.html to learn about configs parameters.
+
 package amqp
 
 import "github.com/streadway/amqp"
