@@ -13,52 +13,70 @@ import (
 	"github.com/streadway/amqp"
 )
 
+// Event represents amqp.Delivery with attached context and data
 type Event struct {
-	Data    interface{}     // converted and ready to use entity of reply type.
-	Context context.Context // event's context.
+	// Converted and ready to use pointer to entity of reply type.
+	Data interface{}
+	// Event's context.
+	// Contains context.Background by default and setups with DeliveryBefore option.
+	Context context.Context
 	amqp.Delivery
 }
 
+// Done is a shortcut for Ack(false)
 func (e Event) Done() {
 	e.Ack(false)
 }
 
+// Client is a main object, that controls all processes behind Pub and Sub calls.
 type Client struct {
 	cfgs configs
 	opts options
 	conn *conn.Connection
 }
 
-func NewClientWithConnection(conn *conn.Connection, cfgs ...ClientConfig) (cl Client) {
-	cl.opts = defaultOptions()
-	cl.cfgs = newConfigs()
+// Use this function if you want to pass conn directly. Otherwise, please use NewClient.
+func NewClientWithConnection(conn *conn.Connection, cfgs ...ClientConfig) (cl Client, err error) {
+	cl.constructorBefore(cfgs...)
 	cl.conn = conn
-	applyConfigs(&cl, cfgs...)
-	conn.WaitInit(0)
+	err = cl.constructorAfter()
 	return
 }
 
+// NewClient is a common way to create new working Client.
 func NewClient(url string, cfgs ...ClientConfig) (cl Client, err error) {
-	cl.opts = defaultOptions()
-	cl.cfgs = newConfigs()
-	applyConfigs(&cl, cfgs...)
+	cl.constructorBefore(cfgs...)
 	if cl.cfgs.conn != nil {
 		cl.conn, _ = conn.DialConfig(url, *cl.cfgs.conn, cl.opts.connOpts...)
 	} else {
 		cl.conn, _ = conn.Dial(url, cl.opts.connOpts...)
 	}
-	err = cl.conn.WaitInit(0)
-	if cl.opts.lazy.declaring {
+	err = cl.constructorAfter()
+	return
+}
+
+func (c *Client) constructorBefore(cfgs ...ClientConfig) {
+	c.opts = defaultOptions()
+	c.cfgs = newConfigs()
+	applyConfigs(c, cfgs...)
+}
+
+func (c *Client) constructorAfter() error {
+	err := c.conn.WaitInit(0)
+	if err != nil {
+		return err
+	}
+	if c.opts.lazy.declaring {
 		go func() {
 			// drop lists of declared exchanges and queues when connection drops.
 			for ; ; time.Sleep(time.Minute) {
-				<-cl.conn.NotifyClose()
-				cl.opts.lazy.exchangesDeclared.Drop()
-				cl.opts.lazy.queueDeclared.Drop()
+				<-c.conn.NotifyClose()
+				c.opts.lazy.exchangesDeclared.Drop()
+				c.opts.lazy.queueDeclared.Drop()
 			}
 		}()
 	}
-	return
+	return nil
 }
 
 // Pub publishes v to exchange.
@@ -137,7 +155,9 @@ func (c Client) listen(exchangeName string, dataType interface{}, eventChan chan
 }
 
 var (
-	NotAllowedPriority            = errors.New("not allowed priority")
+	// This error occurs when message was delivered, but it has too low or too high priority.
+	NotAllowedPriority = errors.New("not allowed priority")
+	// DeliveryChannelWasClosedError is an information error, that logs to info logger when delivery channel was closed.
 	DeliveryChannelWasClosedError = errors.New("delivery channel was closed")
 	// Durable or non-auto-delete queues with empty names will survive when all consumers have finished using it, but no one can connect to it back.
 	QueueDeclareWarning = errors.New("declaring durable or non-auto-delete queue with empty name")
