@@ -35,12 +35,7 @@ type (
 		processAllDeliveries bool
 		handlersAmount       int
 		errorBefore          []ErrorBefore
-		lazy                 struct {
-			declaring         bool
-			exchangesDeclared *SyncedStringSlice
-			queueDeclared     *SyncedStringSlice
-		}
-		connOpts []conn.ConnectionOption
+		connOpts             []conn.ConnectionOption
 	}
 
 	// Function, that should return new message Id.
@@ -85,7 +80,7 @@ func defaultOptions() options {
 	return opts
 }
 
-// WaitConnection tells client to wait connection before Sub or Pub executing.
+// WaitConnection tells client to wait connection before Subscription or Pub executing.
 func WaitConnection(should bool, timeout time.Duration) Option {
 	return func(options *options) {
 		options.wait.flag = should
@@ -95,14 +90,14 @@ func WaitConnection(should bool, timeout time.Duration) Option {
 	}
 }
 
-// EventChanBuffer sets the buffer of event channel for Sub method.
+// EventChanBuffer sets the buffer of event channel for Subscription method.
 func EventChanBuffer(a int) Option {
 	return func(options *options) {
 		options.subEventChanBuffer = a
 	}
 }
 
-// Context sets root context of Sub method for each event.
+// Context sets root context of Subscription method for each event.
 // context.Background by default.
 func Context(ctx context.Context) Option {
 	return func(options *options) {
@@ -209,21 +204,6 @@ func HandlersAmount(n int) Option {
 		if n > 0 {
 			options.handlersAmount = n
 		}
-	}
-}
-
-// LazyDeclaring option with true value tells the Client not to declare exchanges and queues
-// if it was declared before by this Client.
-// By default client declares it on every Sub loop and every Pub call.
-// Panics if not passed as one of Client's constructors.
-func LazyDeclaring(v bool) Option {
-	return func(options *options) {
-		if options.lazy.exchangesDeclared != nil || options.lazy.queueDeclared != nil {
-			panic(LazyDeclaringFatal)
-		}
-		options.lazy.declaring = v
-		options.lazy.queueDeclared = &SyncedStringSlice{}
-		options.lazy.exchangesDeclared = &SyncedStringSlice{}
 	}
 }
 

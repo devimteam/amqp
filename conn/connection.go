@@ -88,6 +88,11 @@ func (c Connection) Connection() *amqp.Connection {
 	return c.conn
 }
 
+// Connection gives direct access to amqp.Connection.
+func (c Connection) Channel() (*amqp.Channel, error) {
+	return c.conn.Channel()
+}
+
 // Dialer setups connection to server.
 type Dialer func() (*amqp.Connection, error)
 
@@ -182,8 +187,8 @@ var (
 	Connected        = errors.New("connected")
 )
 
-// Wait waits until connection is ready to serve.
-func (c *Connection) Wait(timeout time.Duration) error {
+// NotifyConnected waits until connection is ready to serve.
+func (c *Connection) NotifyConnected(timeout time.Duration) error {
 	return timeoutPattern(func(r chan<- Signal) {
 		defer close(r)
 		c.state.disconnected()

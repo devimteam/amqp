@@ -88,3 +88,51 @@ func (s *SyncedStringSlice) Drop() {
 	defer s.mx.Unlock()
 	s.slice = make([]string, 1)
 }
+
+type (
+	matrix struct {
+		core map[string]map[string]interface{}
+	}
+	matrixIter chan matrixVal
+	matrixVal  struct {
+		x, y string
+		v    interface{}
+	}
+)
+
+func newMatrix() (mx matrix) {
+	mx.core = make(map[string]map[string]interface{})
+	return
+}
+
+func (m *matrix) Get(x, y string) (interface{}, bool) {
+	r, ok := m.core[x]
+	if !ok {
+		return nil, ok
+	}
+	v, ok := r[y]
+	return v, ok
+}
+
+func (m *matrix) Set(x, y string, v interface{}) {
+	r, ok := m.core[x]
+	if ok {
+		r[y] = v
+		return
+	}
+	m.core[x] = make(map[string]interface{})
+	m.core[x][y] = v
+}
+
+func (m *matrix) Iterator() matrixIter {
+	iter := make(chan matrixVal)
+	go func() {
+		for x, r := range m.core {
+			for y, v := range r {
+				iter <- matrixVal{x: x, y: y, v: v}
+			}
+		}
+		close(iter)
+	}()
+	return iter
+}

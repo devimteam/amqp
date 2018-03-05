@@ -45,7 +45,7 @@ func Example_common() {
 	if err != nil {
 		panic(err)
 	}
-	eventChan, _ := client.Sub("example-exchange", Comment{})
+	eventChan, _ := client.Subscription("example-exchange", Comment{})
 	go func() {
 		for event := range eventChan {
 			fmt.Println(event.Data) // do something with events

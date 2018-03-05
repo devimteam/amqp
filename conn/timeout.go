@@ -28,25 +28,25 @@ type Timeouter interface {
 	Inc()  // Increase duration of next Wait call.
 }
 
-type delayer struct {
+type backoffer struct {
 	max       time.Duration
 	current   time.Duration
 	baseDelay time.Duration
 }
 
 func CommonTimeouter(max, min time.Duration) Timeouter {
-	return &delayer{
+	return &backoffer{
 		current:   0,
 		max:       max,
 		baseDelay: min,
 	}
 }
 
-func (s *delayer) Wait() {
+func (s *backoffer) Wait() {
 	time.Sleep(s.current)
 }
 
-func (s *delayer) Inc() {
+func (s *backoffer) Inc() {
 	if isInfinite(int(s.max)) || s.current < s.max {
 		s.current *= 2
 	}
@@ -55,7 +55,7 @@ func (s *delayer) Inc() {
 	}
 }
 
-func (s *delayer) Value() time.Duration {
+func (s *backoffer) Value() time.Duration {
 	return s.current
 }
 

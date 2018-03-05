@@ -28,11 +28,12 @@ func (e Event) Done() {
 	e.Ack(false)
 }
 
-// Client is a main object, that controls all processes behind Pub and Sub calls.
+// Client is a main object, that controls all processes behind Pub and Subscription calls.
 type Client struct {
 	cfgs configs
 	opts options
 	conn *conn.Connection
+	pool *ChannelsPool
 }
 
 // NewClientWithConnection is used when you want to pass connection directly. Otherwise, please use NewClient.
@@ -66,16 +67,7 @@ func (c *Client) constructorAfter() error {
 	if err != nil {
 		return err
 	}
-	if c.opts.lazy.declaring {
-		go func() {
-			// drop lists of declared exchanges and queues when connection drops.
-			for ; ; time.Sleep(time.Minute) {
-				<-c.conn.NotifyClose()
-				c.opts.lazy.exchangesDeclared.Drop()
-				c.opts.lazy.queueDeclared.Drop()
-			}
-		}()
-	}
+	c.pool = NewPool(c.conn)
 	return nil
 }
 
@@ -83,17 +75,17 @@ func (c *Client) constructorAfter() error {
 func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opts ...ClientConfig) error {
 	applyConfigs(&c, opts...)
 	if c.opts.wait.flag {
-		err := c.conn.Wait(c.opts.wait.timeout)
+		err := c.conn.NotifyConnected(c.opts.wait.timeout)
 		if err != nil {
 			return err
 		}
 	}
-	channel, err := c.conn.Connection().Channel()
+	channel, err := c.pool.Channel()
 	if err != nil {
 		return WrapError("new channel", err)
 	}
-	defer channel.Close()
-	err = c.channelExchangeDeclare(channel, exchangeName, c.cfgs.exchange)
+	defer c.pool.Release(channel)
+	err = channel.ExchangeDeclare(exchangeName, c.cfgs.exchange)
 	if err != nil {
 		return WrapError("declare exchange", err)
 	}
@@ -105,53 +97,80 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 	for _, before := range c.opts.msgOpts.pubBefore {
 		before(ctx, &msg)
 	}
-	err = channelPublish(channel, exchangeName, c.cfgs.publish, msg)
+	err = channel.Publish(exchangeName, msg, c.cfgs.publish)
 	if err != nil {
 		return WrapError("publish", err)
 	}
 	return nil
 }
 
-// Sub subscribes to exchange and consume deliveries and converts their Body field to given dataType.
-func (c Client) Sub(exchangeName string, dataType interface{}, opts ...ClientConfig) (<-chan Event, chan<- conn.Signal) {
+func (c Client) Publishing(ctx context.Context, exchangeName string, cfg ExchangeConfig) (chan<- interface{}, error) {
+	ch := make(chan interface{})
+	go func() {
+		channel, err := c.pool.Channel()
+		if err != nil {
+			c.opts.log.warn.Log(err)
+		}
+		for v := range ch {
+			for ; ; time.Sleep(time.Millisecond * 100) {
+				err = channel.ExchangeDeclare(exchangeName, c.cfgs.exchange)
+				if err != nil {
+					c.opts.log.warn.Log(WrapError("declare exchange", err))
+				}
+				msg, err := constructPublishing(v, &c.opts.msgOpts)
+				if err != nil {
+					c.opts.log.warn.Log(err)
+				}
+				for _, before := range c.opts.msgOpts.pubBefore {
+					before(ctx, &msg)
+				}
+				err = channel.Publish(exchangeName, msg, c.cfgs.publish)
+				if err != nil {
+					c.opts.log.warn.Log(WrapError("publish", err))
+				}
+			}
+		}
+		c.pool.Release(channel)
+	}()
+	return ch, nil
+}
+
+// Subscription subscribes to exchange and consume deliveries and converts their Body field to given dataType.
+func (c Client) Subscription(exchangeName string, dataType interface{}, opts ...ClientConfig) (<-chan Event, chan<- conn.Signal) {
 	eventChan := make(chan Event, c.opts.subEventChanBuffer)
 	doneCh := make(chan conn.Signal)
-	go c.listen(exchangeName, dataType, eventChan, doneCh, opts...)
+	channel, err := c.pool.Channel()
+	if err != nil {
+		c.opts.log.error.Log(err)
+	}
+	go c.listen(channel, exchangeName, dataType, eventChan, doneCh, opts...)
 	return eventChan, doneCh
 }
 
-func (c Client) listen(exchangeName string, dataType interface{}, eventChan chan<- Event, doneChan <-chan conn.Signal, opts ...ClientConfig) {
+func (c Client) listen(channel *Channel, exchangeName string, dataType interface{}, eventChan chan<- Event, doneChan <-chan conn.Signal, opts ...ClientConfig) {
 	applyConfigs(&c, opts...)
-	if c.opts.wait.flag {
-		err := c.conn.Wait(c.opts.wait.timeout)
-		if err != nil {
-			c.opts.log.error.Log(err)
-		}
-	}
-	channel, err := c.conn.Connection().Channel()
-	if err != nil {
-		c.opts.log.error.Log(err)
-		return
-	}
-	deliveryCh, queueName, err := c.prepareDeliveryChan(channel, exchangeName)
-	if err != nil {
-		c.opts.log.error.Log(err)
-		return
-	}
-	c.processersPool(queueName, exchangeName, channel, deliveryCh, dataType, eventChan, doneChan)
-	go func() {
+	for {
 		select {
 		case <-doneChan:
 			if channel != nil {
-				channel.QueueUnbind(queueName, c.cfgs.queueBind.Key, exchangeName, c.cfgs.queueBind.Args)
-				channel.QueueDelete(queueName, c.cfgs.queue.IfUnused, c.cfgs.queue.IfEmpty, c.cfgs.queue.NoWait)
-				channel.Close()
+				c.pool.Release(channel)
 			}
 			return
 		default:
-			c.listen(exchangeName, dataType, eventChan, doneChan, opts...)
+			if c.opts.wait.flag {
+				err := c.conn.NotifyConnected(c.opts.wait.timeout)
+				if err != nil {
+					c.opts.log.error.Log(err)
+				}
+			}
+			deliveryCh, queueName, err := c.prepareDeliveryChan(channel, exchangeName)
+			if err != nil {
+				c.opts.log.error.Log(err)
+				return
+			}
+			c.processersPool(queueName, exchangeName, deliveryCh, dataType, eventChan, doneChan)
 		}
-	}()
+	}
 }
 
 var (
@@ -166,12 +185,12 @@ var (
 )
 
 func (c Client) prepareDeliveryChan(
-	channel *amqp.Channel,
+	channel *Channel,
 	exchangeName string,
 ) (<-chan amqp.Delivery, string, error) {
 	c.opts.log.debug.Log(fmt.Errorf("prepare delivery chan for exchange %s", exchangeName))
 	c.opts.log.debug.Log(fmt.Errorf("exchange(%s) declare", exchangeName))
-	err := c.channelExchangeDeclare(channel, exchangeName, c.cfgs.exchange)
+	err := channel.ExchangeDeclare(exchangeName, c.cfgs.exchange)
 	if err != nil {
 		return nil, "", fmt.Errorf("exchange declare err: %v", err)
 	}
@@ -179,17 +198,17 @@ func (c Client) prepareDeliveryChan(
 		c.opts.log.warn.Log(QueueDeclareWarning)
 	}
 	c.opts.log.debug.Log(fmt.Errorf("queue(%s) declare", c.cfgs.queue.Name))
-	queue, err := c.channelQueueDeclare(channel, c.cfgs.queue)
+	queue, err := channel.QueueDeclare(c.cfgs.queue)
 	if err != nil {
 		return nil, "", fmt.Errorf("queue declare err: %v", err)
 	}
 	c.opts.log.debug.Log(fmt.Errorf("bind queue(%s) to exchange(%s)", queue.Name, exchangeName))
-	err = channelQueueBind(channel, queue.Name, exchangeName, c.cfgs.queueBind)
+	err = channel.QueueBind(queue.Name, exchangeName, c.cfgs.queueBind, c.cfgs.queue.Name == "")
 	if err != nil {
 		return nil, "", fmt.Errorf("queue bind err: %v", err)
 	}
 	c.opts.log.debug.Log(fmt.Errorf("consume from queue(%s)", queue.Name))
-	ch, err := channelConsume(channel, queue.Name, c.cfgs.consume)
+	ch, err := channel.Consume(queue.Name, c.cfgs.consume)
 	if err != nil {
 		return nil, "", fmt.Errorf("channel consume err: %v", err)
 	}
@@ -199,7 +218,6 @@ func (c Client) prepareDeliveryChan(
 // processersPool wraps processEvents with WorkerPool pattern.
 func (c Client) processersPool(
 	queueName, exchangeName string,
-	channel *amqp.Channel,
 	deliveryCh <-chan amqp.Delivery,
 	dataType interface{},
 	eventChan chan<- Event,
@@ -209,7 +227,7 @@ func (c Client) processersPool(
 	wg.Add(c.opts.handlersAmount)
 	for i := 0; i < c.opts.handlersAmount; i++ {
 		go func() {
-			c.processEvents(queueName, exchangeName, channel, deliveryCh, dataType, eventChan, doneChan)
+			c.processEvents(queueName, exchangeName, deliveryCh, dataType, eventChan, doneChan)
 			wg.Done()
 		}()
 	}
@@ -218,7 +236,6 @@ func (c Client) processersPool(
 
 func (c Client) processEvents(
 	queueName, exchangeName string,
-	channel *amqp.Channel,
 	deliveryCh <-chan amqp.Delivery,
 	dataType interface{},
 	eventChan chan<- Event,
@@ -314,7 +331,7 @@ func applyConfigs(cl *Client, opts ...ClientConfig) {
 }
 
 // Sets amqp.Config which is used to dial to broker.
-// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub functions.
+// Has no effect on NewClientWithConnection, Client.Subscription and Client.Pub functions.
 func WithConfig(config amqp.Config) ClientConfig {
 	return func(client *Client) {
 		client.cfgs.conn = &config
@@ -331,7 +348,7 @@ func WithOptions(opts ...Option) ClientConfig {
 }
 
 // WithConnOptions sets options that should be used to create new connection.
-// Has no effect on NewClientWithConnection, Client.Sub and Client.Pub functions.
+// Has no effect on NewClientWithConnection, Client.Subscription and Client.Pub functions.
 func WithConnOptions(opts ...conn.ConnectionOption) ClientConfig {
 	return func(client *Client) {
 		client.opts.connOpts = append(client.opts.connOpts, opts...)

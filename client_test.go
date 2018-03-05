@@ -167,7 +167,7 @@ func TestHighLoad(t *testing.T) {
 func subFunc(prefix string, client Client, storage *XStorage, options ...ClientConfig) {
 	ch := make(chan []interface{})
 	go listenAndPrintln(ch)
-	events, _ := client.Sub(testExchangeName, X{}, append(options, WithOptions(AllLoggers(logger.NewChanLogger(ch))))...)
+	events, _ := client.Subscription(testExchangeName, X{}, append(options, WithOptions(AllLoggers(logger.NewChanLogger(ch))))...)
 	for ev := range events {
 		fmt.Println(prefix, "event data: ", ev.Data)
 		storage.Consume(ev.Data.(*X).Num)
