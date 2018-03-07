@@ -16,13 +16,13 @@ import (
 type (
 	// Connection is a wrapper of amqp.Connection with reconnection ability.
 	Connection struct {
-		conn         *amqp.Connection
-		delayBuilder TimeoutBuilder
-		logger       logger.Logger
-		state        connectionState
-		notifier     Notifier
-		done         chan Signal
-		maxAttempts  int
+		conn        *amqp.Connection
+		backoffer   TimeoutBuilder
+		logger      logger.Logger
+		state       connectionState
+		notifier    Notifier
+		done        chan Signal
+		maxAttempts int
 	}
 
 	// ConnectionOption is a type which represents optional Connection's feature.
@@ -39,14 +39,14 @@ func WithLogger(logger logger.Logger) ConnectionOption {
 // WithDelayBuilder changes delay mechanism between attempts
 func WithDelayBuilder(builder TimeoutBuilder) ConnectionOption {
 	return func(connection *Connection) {
-		connection.delayBuilder = builder
+		connection.backoffer = builder
 	}
 }
 
 // Timeout sets delays for connection between attempts.
-func WithDelay(base, max time.Duration) ConnectionOption {
+func WithDelay(min, max time.Duration) ConnectionOption {
 	return func(connection *Connection) {
-		connection.delayBuilder = CommonTimeoutBuilder(max, base)
+		connection.backoffer = CommonTimeoutBuilder(min, max)
 	}
 }
 
@@ -76,10 +76,10 @@ func newConnection(opts ...ConnectionOption) *Connection {
 
 func defaultConnection() Connection {
 	return Connection{
-		delayBuilder: CommonTimeoutBuilder(-1, defaultTimeoutBase),
-		logger:       logger.NoopLogger,
-		done:         make(chan Signal),
-		maxAttempts:  -1,
+		backoffer:   Backoffer(defaultMinInterval, defaultMaxInterval, defaultFactor, defaultJitter),
+		logger:      logger.NoopLogger,
+		done:        make(chan Signal),
+		maxAttempts: -1,
 	}
 }
 
@@ -133,7 +133,7 @@ func Open(conn io.ReadWriteCloser, config amqp.Config, opts ...ConnectionOption)
 func (c *Connection) connect(dialer Dialer) {
 	c.state.disconnected()
 	c.logger.Log(Disconnected)
-	attemptNum, delay, delayCh := 0, c.delayBuilder(), make(chan Signal)
+	attemptNum, delay, delayCh := 0, c.backoffer(), make(chan Signal)
 ConnectionLoop:
 	for ; isInfinite(c.maxAttempts) || attemptNum < c.maxAttempts; attemptNum++ {
 		close(delayCh)

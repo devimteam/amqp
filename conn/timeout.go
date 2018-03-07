@@ -1,6 +1,9 @@
 package conn
 
-import "time"
+import (
+	"math/rand"
+	"time"
+)
 
 func timeoutPattern(fn func(chan<- Signal), timeout time.Duration, deadlineErr error) error {
 	r := make(chan Signal)
@@ -13,13 +16,24 @@ func timeoutPattern(fn func(chan<- Signal), timeout time.Duration, deadlineErr e
 	}
 }
 
-const defaultTimeoutBase = time.Second
+const (
+	defaultMinInterval = time.Second
+	defaultMaxInterval = time.Second * 60
+	defaultFactor      = 1.5
+	defaultJitter      = 0.5
+)
 
 type TimeoutBuilder func() Timeouter
 
-func CommonTimeoutBuilder(max, min time.Duration) TimeoutBuilder {
+func CommonTimeoutBuilder(min, max time.Duration) TimeoutBuilder {
 	return func() Timeouter {
-		return CommonTimeouter(max, min)
+		return CommonTimeouter(min, max)
+	}
+}
+
+func Backoffer(min, max time.Duration, factor, jitter float64) TimeoutBuilder {
+	return func() Timeouter {
+		return Backoff(min, max, factor, jitter)
 	}
 }
 
@@ -29,16 +43,31 @@ type Timeouter interface {
 }
 
 type backoffer struct {
-	max       time.Duration
-	current   time.Duration
-	baseDelay time.Duration
+	current time.Duration
+
+	min    time.Duration
+	max    time.Duration
+	factor float64
+	jitter float64
 }
 
-func CommonTimeouter(max, min time.Duration) Timeouter {
+func CommonTimeouter(min, max time.Duration) Timeouter {
 	return &backoffer{
-		current:   0,
-		max:       max,
-		baseDelay: min,
+		current: 0,
+		max:     max,
+		min:     min,
+		factor:  defaultFactor,
+		jitter:  defaultJitter,
+	}
+}
+
+func Backoff(min, max time.Duration, factor, jitter float64) Timeouter {
+	return &backoffer{
+		current: 0,
+		min:     min,
+		max:     max,
+		factor:  factor,
+		jitter:  jitter,
 	}
 }
 
@@ -47,12 +76,14 @@ func (s *backoffer) Wait() {
 }
 
 func (s *backoffer) Inc() {
-	if isInfinite(int(s.max)) || s.current < s.max {
-		s.current *= 2
+	if isInfiniteDuration(s.max) || s.current < s.max {
+		s.current = min(s.next(), s.max)
 	}
-	if s.current == 0 {
-		s.current = s.baseDelay
-	}
+	s.current = max(s.current, s.min)
+}
+
+func (s *backoffer) next() time.Duration {
+	return s.current*time.Duration(s.factor) + time.Duration(rand.Float64()*float64(s.current)*s.jitter)
 }
 
 func (s *backoffer) Value() time.Duration {
@@ -61,4 +92,22 @@ func (s *backoffer) Value() time.Duration {
 
 func isInfinite(n int) bool {
 	return n < 0
+}
+
+func isInfiniteDuration(n time.Duration) bool {
+	return n < 0
+}
+
+func min(a time.Duration, b time.Duration) time.Duration {
+	if a > b {
+		return b
+	}
+	return a
+}
+
+func max(a time.Duration, b time.Duration) time.Duration {
+	if a < b {
+		return b
+	}
+	return a
 }
