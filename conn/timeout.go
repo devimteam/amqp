@@ -76,14 +76,15 @@ func (s *backoffer) Wait() {
 }
 
 func (s *backoffer) Inc() {
+	s.current = max(s.current, s.min)
 	if isInfiniteDuration(s.max) || s.current < s.max {
 		s.current = min(s.next(), s.max)
+		s.current = jitterDuration(s.current, s.jitter)
 	}
-	s.current = max(s.current, s.min)
 }
 
 func (s *backoffer) next() time.Duration {
-	return s.current*time.Duration(s.factor) + time.Duration(rand.Float64()*float64(s.current)*s.jitter)
+	return s.current * time.Duration(s.factor)
 }
 
 func (s *backoffer) Value() time.Duration {
@@ -110,4 +111,8 @@ func max(a time.Duration, b time.Duration) time.Duration {
 		return b
 	}
 	return a
+}
+
+func jitterDuration(d time.Duration, jitter float64) time.Duration {
+	return d + time.Duration(rand.Float64()*float64(d)*jitter)
 }
