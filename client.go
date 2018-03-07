@@ -30,10 +30,10 @@ func (e Event) Done() {
 
 // Client is a main object, that controls all processes behind Pub and Subscription calls.
 type Client struct {
-	cfgs configs
-	opts options
-	conn *conn.Connection
-	pool *ChannelsPool
+	cfgs     configs
+	opts     options
+	conn     *conn.Connection
+	observer *observer
 }
 
 // NewClientWithConnection is used when you want to pass connection directly. Otherwise, please use NewClient.
@@ -44,7 +44,7 @@ func NewClientWithConnection(conn *conn.Connection, cfgs ...ClientConfig) (cl Cl
 	return
 }
 
-// NewClient is a common way to create new working Client.
+// NewClient is a common way to create a new Client.
 func NewClient(url string, cfgs ...ClientConfig) (cl Client, err error) {
 	cl.constructorBefore(cfgs...)
 	if cl.cfgs.conn != nil {
@@ -67,7 +67,7 @@ func (c *Client) constructorAfter() error {
 	if err != nil {
 		return err
 	}
-	c.pool = NewPool(c.conn)
+	c.observer = newObserver(c.conn, c.opts.observerOpts...)
 	return nil
 }
 
@@ -80,12 +80,31 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 			return err
 		}
 	}
-	channel, err := c.pool.Channel()
-	if err != nil {
-		return WrapError("new channel", err)
-	}
-	defer c.pool.Release(channel)
-	err = channel.ExchangeDeclare(exchangeName, c.cfgs.exchange)
+	channel := c.observer.channel()
+	defer c.observer.release(channel)
+	return c.publish(channel, ctx, exchangeName, v, &c.cfgs.exchange)
+}
+
+// Publishing provides channel for Pub calls. It uses own amqp channel to send messages.
+func (c Client) Publishing(ctx context.Context, exchangeName string, cfg ExchangeConfig) (chan<- interface{}, error) {
+	ch := make(chan interface{})
+	go func() {
+		channel := c.observer.channel()
+		defer c.observer.release(channel)
+		for v := range ch {
+			for ; ; time.Sleep(time.Millisecond * 100) {
+				err := c.publish(channel, ctx, exchangeName, v, &cfg)
+				if err != nil {
+					c.opts.log.warn.Log(err)
+				}
+			}
+		}
+	}()
+	return ch, nil
+}
+
+func (c *Client) publish(channel *Channel, ctx context.Context, exchangeName string, v interface{}, cfg *ExchangeConfig) error {
+	err := channel.ExchangeDeclare(exchangeName, cfg)
 	if err != nil {
 		return WrapError("declare exchange", err)
 	}
@@ -93,7 +112,6 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 	if err != nil {
 		return err
 	}
-
 	for _, before := range c.opts.msgOpts.pubBefore {
 		before(ctx, &msg)
 	}
@@ -104,45 +122,11 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 	return nil
 }
 
-func (c Client) Publishing(ctx context.Context, exchangeName string, cfg ExchangeConfig) (chan<- interface{}, error) {
-	ch := make(chan interface{})
-	go func() {
-		channel, err := c.pool.Channel()
-		if err != nil {
-			c.opts.log.warn.Log(err)
-		}
-		for v := range ch {
-			for ; ; time.Sleep(time.Millisecond * 100) {
-				err = channel.ExchangeDeclare(exchangeName, c.cfgs.exchange)
-				if err != nil {
-					c.opts.log.warn.Log(WrapError("declare exchange", err))
-				}
-				msg, err := constructPublishing(v, &c.opts.msgOpts)
-				if err != nil {
-					c.opts.log.warn.Log(err)
-				}
-				for _, before := range c.opts.msgOpts.pubBefore {
-					before(ctx, &msg)
-				}
-				err = channel.Publish(exchangeName, msg, c.cfgs.publish)
-				if err != nil {
-					c.opts.log.warn.Log(WrapError("publish", err))
-				}
-			}
-		}
-		c.pool.Release(channel)
-	}()
-	return ch, nil
-}
-
 // Subscription subscribes to exchange and consume deliveries and converts their Body field to given dataType.
 func (c Client) Subscription(exchangeName string, dataType interface{}, opts ...ClientConfig) (<-chan Event, chan<- conn.Signal) {
 	eventChan := make(chan Event, c.opts.subEventChanBuffer)
 	doneCh := make(chan conn.Signal)
-	channel, err := c.pool.Channel()
-	if err != nil {
-		c.opts.log.error.Log(err)
-	}
+	channel := c.observer.channel()
 	go c.listen(channel, exchangeName, dataType, eventChan, doneCh, opts...)
 	return eventChan, doneCh
 }
@@ -153,7 +137,7 @@ func (c Client) listen(channel *Channel, exchangeName string, dataType interface
 		select {
 		case <-doneChan:
 			if channel != nil {
-				c.pool.Release(channel)
+				c.observer.release(channel)
 			}
 			return
 		default:
@@ -166,7 +150,7 @@ func (c Client) listen(channel *Channel, exchangeName string, dataType interface
 			deliveryCh, queueName, err := c.prepareDeliveryChan(channel, exchangeName)
 			if err != nil {
 				c.opts.log.error.Log(err)
-				return
+				continue
 			}
 			c.processersPool(queueName, exchangeName, deliveryCh, dataType, eventChan, doneChan)
 		}
@@ -180,8 +164,6 @@ var (
 	DeliveryChannelWasClosedError = errors.New("delivery channel was closed")
 	// Durable or non-auto-delete queues with empty names will survive when all consumers have finished using it, but no one can connect to it back.
 	QueueDeclareWarning = errors.New("declaring durable or non-auto-delete queue with empty name")
-	// You should use LazyDeclaring option only in Client constructors.
-	LazyDeclaringFatal = errors.New("LazyDeclaring not available as option for this method")
 )
 
 func (c Client) prepareDeliveryChan(
@@ -190,9 +172,9 @@ func (c Client) prepareDeliveryChan(
 ) (<-chan amqp.Delivery, string, error) {
 	c.opts.log.debug.Log(fmt.Errorf("prepare delivery chan for exchange %s", exchangeName))
 	c.opts.log.debug.Log(fmt.Errorf("exchange(%s) declare", exchangeName))
-	err := channel.ExchangeDeclare(exchangeName, c.cfgs.exchange)
+	err := channel.ExchangeDeclare(exchangeName, &c.cfgs.exchange)
 	if err != nil {
-		return nil, "", fmt.Errorf("exchange declare err: %v", err)
+		return nil, "", WrapError("exchange declare err", err)
 	}
 	if c.cfgs.queue.Name == "" && (c.cfgs.queue.Durable || !c.cfgs.queue.AutoDelete) {
 		c.opts.log.warn.Log(QueueDeclareWarning)
@@ -200,17 +182,17 @@ func (c Client) prepareDeliveryChan(
 	c.opts.log.debug.Log(fmt.Errorf("queue(%s) declare", c.cfgs.queue.Name))
 	queue, err := channel.QueueDeclare(c.cfgs.queue)
 	if err != nil {
-		return nil, "", fmt.Errorf("queue declare err: %v", err)
+		return nil, "", WrapError("queue declare err", err)
 	}
 	c.opts.log.debug.Log(fmt.Errorf("bind queue(%s) to exchange(%s)", queue.Name, exchangeName))
 	err = channel.QueueBind(queue.Name, exchangeName, c.cfgs.queueBind, c.cfgs.queue.Name == "")
 	if err != nil {
-		return nil, "", fmt.Errorf("queue bind err: %v", err)
+		return nil, "", WrapError("queue bind err", err)
 	}
 	c.opts.log.debug.Log(fmt.Errorf("consume from queue(%s)", queue.Name))
 	ch, err := channel.Consume(queue.Name, c.cfgs.consume)
 	if err != nil {
-		return nil, "", fmt.Errorf("channel consume err: %v", err)
+		return nil, "", WrapError("channel consume err", err)
 	}
 	return ch, queue.Name, nil
 }
@@ -250,7 +232,7 @@ func (c Client) processEvents(
 				c.opts.log.info.Log(DeliveryChannelWasClosedError)
 				return
 			}
-			c.opts.log.debug.Log(fmt.Errorf("process delivery %s", d.MessageId))
+			c.opts.log.debug.Log(WrapError("process delivery", d.MessageId))
 			c.processEvent(d, dataType, eventChan)
 		case <-doneChan:
 			if c.opts.processAllDeliveries && processedAll {
@@ -300,6 +282,7 @@ func (c Client) handleEvent(d amqp.Delivery, dataType interface{}) (ev Event, er
 		ctx = before(ctx, &d)
 	}
 	ev.Context = ctx
+	ev.Delivery = d
 
 	codec, ok := codecs.Register.Get(d.ContentType)
 	if !ok {
@@ -330,7 +313,7 @@ func applyConfigs(cl *Client, opts ...ClientConfig) {
 	}
 }
 
-// Sets amqp.Config which is used to dial to broker.
+// WithConfig sets amqp.Config which is used to dial to broker.
 // Has no effect on NewClientWithConnection, Client.Subscription and Client.Pub functions.
 func WithConfig(config amqp.Config) ClientConfig {
 	return func(client *Client) {
@@ -352,6 +335,12 @@ func WithOptions(opts ...Option) ClientConfig {
 func WithConnOptions(opts ...conn.ConnectionOption) ClientConfig {
 	return func(client *Client) {
 		client.opts.connOpts = append(client.opts.connOpts, opts...)
+	}
+}
+
+func WithObserverOptions(opts ...ObserverOption) ClientConfig {
+	return func(client *Client) {
+		client.opts.observerOpts = append(client.opts.observerOpts, opts...)
 	}
 }
 

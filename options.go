@@ -36,6 +36,7 @@ type (
 		handlersAmount       int
 		errorBefore          []ErrorBefore
 		connOpts             []conn.ConnectionOption
+		observerOpts         []ObserverOption
 	}
 
 	// Function, that should return new message Id.

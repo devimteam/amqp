@@ -39,7 +39,7 @@ func DefaultQueueConfig() QueueConfig {
 	return QueueConfig{
 		Name:       "",
 		Durable:    false,
-		AutoDelete: false,
+		AutoDelete: true,
 		Exclusive:  false,
 		NoWait:     false,
 		IfUnused:   false,

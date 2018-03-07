@@ -66,12 +66,12 @@ func Attempts(n int) ConnectionOption {
 	}
 }
 
-func newConnection(opts ...ConnectionOption) Connection {
+func newConnection(opts ...ConnectionOption) *Connection {
 	c := defaultConnection()
 	for i := range opts {
 		opts[i](&c)
 	}
-	return c
+	return &c
 }
 
 func defaultConnection() Connection {
@@ -84,12 +84,12 @@ func defaultConnection() Connection {
 }
 
 // Connection gives direct access to amqp.Connection.
-func (c Connection) Connection() *amqp.Connection {
+func (c *Connection) Connection() *amqp.Connection {
 	return c.conn
 }
 
 // Connection gives direct access to amqp.Connection.
-func (c Connection) Channel() (*amqp.Channel, error) {
+func (c *Connection) Channel() (*amqp.Channel, error) {
 	return c.conn.Channel()
 }
 
@@ -101,7 +101,7 @@ type Dialer func() (*amqp.Connection, error)
 func DialDialer(dialer Dialer, opts ...ConnectionOption) (*Connection, error) {
 	c := newConnection(opts...)
 	c.connect(dialer)
-	return &c, nil
+	return c, nil
 }
 
 // Dial wraps amqp.Dial function and adds reconnection ability.

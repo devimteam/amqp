@@ -156,9 +156,30 @@ func TestHighLoad(t *testing.T) {
 		go pubFuncGroup("c2p6", 10500, 10510, cl2, time.Millisecond*3000, &wg, store)
 	}
 	wg.Wait()
-	cl1.conn.Close()
-	cl2.conn.Close()
-	time.Sleep(time.Second * 2)
+	time.Sleep(time.Second * 10)
+	if store.Check() {
+		t.Fatal(store.Error())
+	}
+}
+
+func TestLong(t *testing.T) {
+	ch := make(chan []interface{})
+	store := NewXStorage(1)
+	queuecfg := DefaultQueueConfig()
+	queuecfg.AutoDelete = true
+	go listenAndPrintlnSuff("recon", ch)
+	cl, err := NewClient("amqp://localhost:5672", WithConnOptions(conn.WithLogger(logger.NewChanLogger(ch))), SetQueueConfig(queuecfg),
+		WithOptions(DebugLogger(logger.NewChanLogger(ch))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go subFunc("sub", cl, store)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go pubFuncGroup("c1p1", 0, 500, cl, time.Millisecond*1000, &wg, store)
+	go pubFuncGroup("c1p2", 500, 1000, cl, time.Millisecond*1050, &wg, store)
+	wg.Wait()
+	time.Sleep(time.Second * 5)
 	if store.Check() {
 		t.Fatal(store.Error())
 	}
