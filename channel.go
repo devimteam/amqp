@@ -22,6 +22,10 @@ type Channel struct {
 }
 
 type declared struct {
+	limits struct {
+		count int
+		size  int
+	}
 	exchanges map[string]*ExchangeConfig
 	queues    map[string]QueueConfig
 	bindings  matrix
@@ -139,6 +143,7 @@ func (c *Channel) keepalive(timeout time.Duration) {
 			continue
 		}
 		c.channel = channel
+		c.redeclare()
 		break
 	}
 	c.callMx.Unlock()
@@ -166,6 +171,12 @@ func (c *Channel) keepalive(timeout time.Duration) {
 }
 
 func (c *Channel) redeclare() {
+	if c.declared.limits.count > 0 || c.declared.limits.size > 0 {
+		err := c.channel.Qos(c.declared.limits.count, c.declared.limits.size, false)
+		if err != nil {
+			c.logger.Log(err)
+		}
+	}
 	for k, v := range c.declared.exchanges {
 		err := c.exchangeDeclare(k, v)
 		if err != nil {

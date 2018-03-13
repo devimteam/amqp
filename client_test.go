@@ -162,6 +162,9 @@ func TestHighLoad(t *testing.T) {
 	}
 }
 
+//WithObserverOptions(
+//LimitCount(1),
+//),
 func TestLong(t *testing.T) {
 	ch := make(chan []interface{})
 	store := NewXStorage(1)
@@ -185,6 +188,34 @@ func TestLong(t *testing.T) {
 	}
 }
 
+func TestLimits(t *testing.T) {
+	ch := make(chan []interface{})
+	store := NewXStorage(1)
+	queuecfg := DefaultQueueConfig()
+	queuecfg.Name = "aaaa"
+	go listenAndPrintlnSuff("recon", ch)
+	cl, err := NewClient("amqp://localhost:5672",
+		WithConnOptions(conn.WithLogger(logger.NewChanLogger(ch))), SetQueueConfig(queuecfg),
+		WithObserverOptions(LimitCount(5)),
+		WithOptions(DebugLogger(logger.NewChanLogger(ch))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go fatSubFunc("sub", cl, store)
+	go fatSubFunc("sub2", cl, store)
+	go fatSubFunc("sub3", cl, store)
+	go fatSubFunc("sub4", cl, store)
+	go fatSubFunc("sub5", cl, store)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go pubFuncGroup("c1p1", 0, 100, cl, time.Millisecond, &wg, store)
+	wg.Wait()
+	time.Sleep(time.Second * 25)
+	if store.Check() {
+		t.Fatal(store.Error())
+	}
+}
+
 func subFunc(prefix string, client Client, storage *XStorage, options ...ClientConfig) {
 	ch := make(chan []interface{})
 	go listenAndPrintln(ch)
@@ -192,6 +223,19 @@ func subFunc(prefix string, client Client, storage *XStorage, options ...ClientC
 	for ev := range events {
 		fmt.Println(prefix, "event data: ", ev.Data)
 		storage.Consume(ev.Data.(*X).Num)
+		ev.Done()
+	}
+	fmt.Println("end of events")
+}
+
+func fatSubFunc(prefix string, client Client, storage *XStorage, options ...ClientConfig) {
+	ch := make(chan []interface{})
+	go listenAndPrintln(ch)
+	events, _ := client.Subscription(testExchangeName, X{}, append(options, WithOptions(AllLoggers(logger.NewChanLogger(ch))))...)
+	for ev := range events {
+		fmt.Println(prefix, "event data: ", ev.Data)
+		storage.Consume(ev.Data.(*X).Num)
+		time.Sleep(time.Second)
 		ev.Done()
 	}
 	fmt.Println("end of events")

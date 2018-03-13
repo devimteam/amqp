@@ -26,6 +26,10 @@ type (
 		idleDuration time.Duration
 		min          int
 		max          int
+		subLimits    struct {
+			count int
+			size  int
+		}
 	}
 	ObserverOption func(opts *observerOpts)
 )
@@ -51,6 +55,22 @@ func Min(min int) ObserverOption {
 func Lifetime(dur time.Duration) ObserverOption {
 	return func(opts *observerOpts) {
 		opts.idleDuration = dur
+	}
+}
+
+// LimitCount limits messages for channel, by calling Qos after each reconnection.
+// Pass zero for unlimited messages.
+func LimitCount(count int) ObserverOption {
+	return func(opts *observerOpts) {
+		opts.subLimits.count = count
+	}
+}
+
+// LimitSize limits messages size in bytes for channel, by calling Qos after each reconnection.
+// Pass zero for unlimited messages.
+func LimitSize(size int) ObserverOption {
+	return func(opts *observerOpts) {
+		opts.subLimits.size = size
 	}
 }
 
@@ -99,6 +119,7 @@ func (p *observer) channel() *Channel {
 					exchanges: make(map[string]*ExchangeConfig),
 					queues:    make(map[string]QueueConfig),
 					bindings:  newMatrix(),
+					limits:    p.options.subLimits,
 				},
 				logger: p.logger,
 			}
