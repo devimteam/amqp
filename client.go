@@ -13,6 +13,15 @@ import (
 	"github.com/streadway/amqp"
 )
 
+var (
+	// This error occurs when message was delivered, but it has too low or too high priority.
+	NotAllowedPriority = errors.New("not allowed priority")
+	// DeliveryChannelWasClosedError is an information error, that logs to info logger when delivery channel was closed.
+	DeliveryChannelWasClosedError = errors.New("delivery channel was closed")
+	// Durable or non-auto-delete queues with empty names will survive when all consumers have finished using it, but no one can connect to it back.
+	QueueDeclareWarning = errors.New("declaring durable or non-auto-delete queue with empty name")
+)
+
 // Event represents amqp.Delivery with attached context and data
 type Event struct {
 	// Converted and ready to use pointer to entity of reply type.
@@ -63,10 +72,6 @@ func (c *Client) constructorBefore(cfgs ...ClientConfig) {
 }
 
 func (c *Client) constructorAfter() error {
-	err := c.conn.WaitInit(0)
-	if err != nil {
-		return err
-	}
 	c.observer = newObserver(c.conn, c.opts.observerOpts...)
 	return nil
 }
@@ -87,7 +92,7 @@ func (c Client) Pub(ctx context.Context, exchangeName string, v interface{}, opt
 
 // Publishing provides channel for Pub calls. It uses own amqp channel to send messages.
 func (c Client) Publishing(ctx context.Context, exchangeName string, cfg ExchangeConfig) (chan<- interface{}, error) {
-	ch := make(chan interface{})
+	ch := make(chan interface{}, c.opts.pubEventChanBuffer)
 	go func() {
 		channel := c.observer.channel()
 		defer c.observer.release(channel)
@@ -122,7 +127,7 @@ func (c *Client) publish(channel *Channel, ctx context.Context, exchangeName str
 	return nil
 }
 
-// Subscription subscribes to exchange and consume deliveries and converts their Body field to given dataType.
+// Subscription subscribes to exchange, consume deliveries and converts their Body field to given dataType.
 func (c Client) Subscription(exchangeName string, dataType interface{}, opts ...ClientConfig) (<-chan Event, chan<- conn.Signal) {
 	eventChan := make(chan Event, c.opts.subEventChanBuffer)
 	doneCh := make(chan conn.Signal)
@@ -156,15 +161,6 @@ func (c Client) listen(channel *Channel, exchangeName string, dataType interface
 		}
 	}
 }
-
-var (
-	// This error occurs when message was delivered, but it has too low or too high priority.
-	NotAllowedPriority = errors.New("not allowed priority")
-	// DeliveryChannelWasClosedError is an information error, that logs to info logger when delivery channel was closed.
-	DeliveryChannelWasClosedError = errors.New("delivery channel was closed")
-	// Durable or non-auto-delete queues with empty names will survive when all consumers have finished using it, but no one can connect to it back.
-	QueueDeclareWarning = errors.New("declaring durable or non-auto-delete queue with empty name")
-)
 
 func (c Client) prepareDeliveryChan(
 	channel *Channel,

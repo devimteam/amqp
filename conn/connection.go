@@ -80,6 +80,7 @@ func defaultConnection() Connection {
 		logger:      logger.NoopLogger,
 		done:        make(chan Signal),
 		maxAttempts: -1,
+		conn:        &amqp.Connection{},
 	}
 }
 
@@ -150,7 +151,7 @@ ConnectionLoop:
 			delay.Inc()
 			connection, err := dialer()
 			if err != nil {
-				c.logger.Log(fmt.Errorf("dial: %v", err))
+				c.logger.Log(fmt.Errorf("dialer: %v", err))
 				continue
 			}
 			c.conn = connection
@@ -193,20 +194,6 @@ func (c *Connection) NotifyConnected(timeout time.Duration) error {
 		defer close(r)
 		c.state.disconnected()
 		c.state.connected()
-		r <- Signal{}
-	}, timeout, DeadlineError)
-}
-
-// WaitInit can be called after one of Client constructors to ensure, that it is ready to serve.
-func (c *Connection) WaitInit(timeout time.Duration) error {
-	if timeout <= 0 {
-		timeout = time.Minute
-	}
-	return timeoutPattern(func(r chan<- Signal) {
-		defer close(r)
-		for c.conn == nil {
-			time.Sleep(time.Millisecond * 100)
-		}
 		r <- Signal{}
 	}, timeout, DeadlineError)
 }

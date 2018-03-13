@@ -24,6 +24,18 @@ func DefaultExchangeConfig() ExchangeConfig {
 	}
 }
 
+// LongExchangeConfig should be used as configure shortcut for long-live exchanges.
+func LongExchangeConfig() ExchangeConfig {
+	return ExchangeConfig{
+		Kind:       "fanout",
+		Durable:    true,
+		AutoDelete: false,
+		Internal:   false,
+		NoWait:     false,
+		Args:       nil,
+	}
+}
+
 type QueueConfig struct {
 	Name       string
 	Durable    bool
@@ -40,6 +52,20 @@ func DefaultQueueConfig() QueueConfig {
 		Name:       "",
 		Durable:    false,
 		AutoDelete: true,
+		Exclusive:  false,
+		NoWait:     false,
+		IfUnused:   false,
+		IfEmpty:    false,
+		Args:       nil,
+	}
+}
+
+// LongQueueConfig should be used as configure shortcut for long-live queues.
+func LongQueueConfig(name string) QueueConfig {
+	return QueueConfig{
+		Name:       name,
+		Durable:    true,
+		AutoDelete: false,
 		Exclusive:  false,
 		NoWait:     false,
 		IfUnused:   false,

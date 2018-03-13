@@ -2,33 +2,9 @@ package amqp
 
 import (
 	"fmt"
-	"math/rand"
 	"strings"
 	"sync"
-	"time"
 )
-
-var randomSymbols = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-var rander *rand.Rand
-
-func init() {
-	rander = rand.New(rand.NewSource(time.Now().Unix()))
-}
-
-var QueuePrefix = "queue-"
-
-func genRandomQueueName() string {
-	return QueuePrefix + genRandomString(15)
-}
-
-func genRandomString(length int) string {
-	n := len(randomSymbols)
-	b := make([]rune, length)
-	for i := range b {
-		b[i] = randomSymbols[rander.Intn(n)]
-	}
-	return string(b)
-}
 
 type stackingError struct {
 	errs []string

@@ -11,6 +11,17 @@ import (
 	"github.com/streadway/amqp"
 )
 
+const (
+	MaxMessagePriority = 9
+	MinMessagePriority = 0
+)
+
+const (
+	defaultWaitDeadline  = time.Second * 5
+	defaultEventBuffer   = 1
+	defaultHandlerAmount = 1
+)
+
 type (
 	Option func(*options)
 	// Options is a struct with almost all possible options of Client.
@@ -24,6 +35,7 @@ type (
 			cap  int
 		}
 		subEventChanBuffer int
+		pubEventChanBuffer int
 		log                struct {
 			debug logger.Logger
 			info  logger.Logger
@@ -50,17 +62,6 @@ type (
 	// Function, that changes error, which caused on incorrect handling.
 	// Common use-case: debugging.
 	ErrorBefore func(amqp.Delivery, error) error
-)
-
-const (
-	MaxMessagePriority = 9
-	MinMessagePriority = 0
-)
-
-const (
-	defaultWaitDeadline  = time.Second * 5
-	defaultEventBuffer   = 1
-	defaultHandlerAmount = 1
 )
 
 func defaultOptions() options {
@@ -95,6 +96,13 @@ func WaitConnection(should bool, timeout time.Duration) Option {
 func EventChanBuffer(a int) Option {
 	return func(options *options) {
 		options.subEventChanBuffer = a
+	}
+}
+
+// PublisherChanBuffer sets the buffer of event channel for Publishing method.
+func PublisherChanBuffer(a int) Option {
+	return func(options *options) {
+		options.pubEventChanBuffer = a
 	}
 }
 
