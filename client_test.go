@@ -162,9 +162,6 @@ func TestHighLoad(t *testing.T) {
 	}
 }
 
-//WithObserverOptions(
-//LimitCount(1),
-//),
 func TestLong(t *testing.T) {
 	ch := make(chan []interface{})
 	store := NewXStorage(1)

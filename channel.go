@@ -83,6 +83,45 @@ func (c *Channel) exchangeDeclare(exchangeName string, exchangeCfg *ExchangeConf
 	)
 }
 
+func (c *Channel) declareExchange(exchange Exchange) error {
+	c.callMx.Lock()
+	defer c.callMx.Unlock()
+	return c.channel.ExchangeDeclare(
+		exchange.Name,
+		exchange.Kind,
+		exchange.Durable,
+		exchange.AutoDelete,
+		exchange.Internal,
+		exchange.NoWait,
+		exchange.Args,
+	)
+}
+
+func (c *Channel) declareQueue(queue Queue) (amqp.Queue, error) {
+	c.callMx.Lock()
+	defer c.callMx.Unlock()
+	return c.channel.QueueDeclare(
+		queue.Name,
+		queue.Durable,
+		queue.AutoDelete,
+		queue.Exclusive,
+		queue.NoWait,
+		queue.Args,
+	)
+}
+
+func (c *Channel) bind(binding Binding) error {
+	c.callMx.Lock()
+	defer c.callMx.Unlock()
+	return c.channel.QueueBind(
+		binding.Queue,
+		binding.Key,
+		binding.Exchange,
+		binding.NoWait,
+		binding.Args,
+	)
+}
+
 func (c *Channel) QueueDeclare(queueCfg QueueConfig) (q amqp.Queue, err error) {
 	c.callMx.Lock()
 	defer c.callMx.Unlock()

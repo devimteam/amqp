@@ -17,9 +17,9 @@ const (
 )
 
 const (
-	defaultWaitDeadline  = time.Second * 5
-	defaultEventBuffer   = 1
-	defaultHandlerAmount = 1
+	defaultWaitDeadline = time.Second * 5
+	defaultEventBuffer  = 1
+	defaultWorkers      = 1
 )
 
 type (
@@ -73,7 +73,7 @@ func defaultOptions() options {
 	opts.msgOpts.minPriority = MinMessagePriority
 	opts.msgOpts.maxPriority = MaxMessagePriority
 	opts.msgOpts.typer = noopTyper
-	opts.handlersAmount = defaultHandlerAmount
+	opts.handlersAmount = defaultWorkers
 	opts.log.debug = logger.NoopLogger
 	opts.log.info = logger.NoopLogger
 	opts.log.warn = logger.NoopLogger

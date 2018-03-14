@@ -2,10 +2,8 @@
 package conn
 
 import (
-	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
@@ -24,47 +22,7 @@ type (
 		done        chan Signal
 		maxAttempts int
 	}
-
-	// ConnectionOption is a type which represents optional Connection's feature.
-	ConnectionOption func(*Connection)
 )
-
-// WithLogger sets logger, which notifies about these events:
-func WithLogger(logger logger.Logger) ConnectionOption {
-	return func(connection *Connection) {
-		connection.logger = logger
-	}
-}
-
-// WithDelayBuilder changes delay mechanism between attempts
-func WithDelayBuilder(builder TimeoutBuilder) ConnectionOption {
-	return func(connection *Connection) {
-		connection.backoffer = builder
-	}
-}
-
-// Timeout sets delays for connection between attempts.
-func WithDelay(min, max time.Duration) ConnectionOption {
-	return func(connection *Connection) {
-		connection.backoffer = CommonTimeoutBuilder(min, max)
-	}
-}
-
-// WithCancel gives ability to stop connection loop, when cancel channel closes or something sends to it.
-func WithCancel(cancel chan Signal) ConnectionOption {
-	return func(connection *Connection) {
-		connection.done = cancel
-	}
-}
-
-// Attempts sets the maximum attempts to connect/reconnect. When amount rises n, connection stops.
-// When n < 0 Connection tries connect infinitely.
-// -1 by default.
-func Attempts(n int) ConnectionOption {
-	return func(connection *Connection) {
-		connection.maxAttempts = n
-	}
-}
 
 func newConnection(opts ...ConnectionOption) *Connection {
 	c := defaultConnection()
@@ -92,41 +50,6 @@ func (c *Connection) Connection() *amqp.Connection {
 // Connection gives direct access to amqp.Connection.
 func (c *Connection) Channel() (*amqp.Channel, error) {
 	return c.conn.Channel()
-}
-
-// Dialer setups connection to server.
-type Dialer func() (*amqp.Connection, error)
-
-// DialDialer wraps any Dialer and adds reconnection ability.
-// Never returns error.
-func DialDialer(dialer Dialer, opts ...ConnectionOption) (*Connection, error) {
-	c := newConnection(opts...)
-	c.connect(dialer)
-	return c, nil
-}
-
-// Dial wraps amqp.Dial function and adds reconnection ability.
-// Never returns error.
-func Dial(url string, opts ...ConnectionOption) (*Connection, error) {
-	return DialDialer(func() (*amqp.Connection, error) { return amqp.Dial(url) }, opts...)
-}
-
-// DialTLS wraps amqp.DialTLS function and adds reconnection ability.
-// Never returns error.
-func DialTLS(url string, amqps *tls.Config, opts ...ConnectionOption) (*Connection, error) {
-	return DialDialer(func() (*amqp.Connection, error) { return amqp.DialTLS(url, amqps) }, opts...)
-}
-
-// DialConfig wraps amqp.DialConfig function and adds reconnection ability.
-// Never returns error.
-func DialConfig(url string, config amqp.Config, opts ...ConnectionOption) (*Connection, error) {
-	return DialDialer(func() (*amqp.Connection, error) { return amqp.DialConfig(url, config) }, opts...)
-}
-
-// Open wraps amqp.Open function and adds reconnection ability.
-// Never returns error.
-func Open(conn io.ReadWriteCloser, config amqp.Config, opts ...ConnectionOption) (*Connection, error) {
-	return DialDialer(func() (*amqp.Connection, error) { return amqp.Open(conn, config) }, opts...)
 }
 
 // connect connects with dialer and listens until connection closes.
@@ -201,13 +124,11 @@ func (c *Connection) NotifyConnected(timeout time.Duration) error {
 // NotifyClose notifies user that connection was closed.
 // Channel closes after first notification.
 func (c *Connection) NotifyClose() <-chan Signal {
-	ch := make(chan Signal)
+	ch := make(chan Signal, 1)
 	if c.state.isConnected() {
 		c.notifier.Register(ch)
 	} else {
-		go func() {
-			ch <- Signal{}
-		}()
+		ch <- Signal{}
 	}
 	return ch
 }
