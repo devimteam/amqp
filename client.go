@@ -3,13 +3,7 @@ package amqp
 import (
 	"context"
 	"errors"
-	"fmt"
-	"reflect"
-	"sync"
-	"time"
 
-	"github.com/devimteam/amqp/codecs"
-	"github.com/devimteam/amqp/conn"
 	"github.com/streadway/amqp"
 )
 
@@ -37,6 +31,7 @@ func (e Event) Done() {
 	e.Ack(false)
 }
 
+/*
 // Client is a main object, that controls all processes behind Pub and Subscription calls.
 type Client struct {
 	cfgs     configs
@@ -101,6 +96,8 @@ func (c Client) Publishing(ctx context.Context, exchangeName string, cfg Exchang
 				err := c.publish(channel, ctx, exchangeName, v, &cfg)
 				if err != nil {
 					c.opts.log.warn.Log(err)
+				} else {
+					break
 				}
 			}
 		}
@@ -308,7 +305,8 @@ func applyConfigs(cl *Client, opts ...ClientConfig) {
 		opts[i](cl)
 	}
 }
-
+*/
+/*
 // WithConfig sets amqp.Config which is used to dial to broker.
 // Has no effect on NewClientWithConnection, Client.Subscription and Client.Pub functions.
 func WithConfig(config amqp.Config) ClientConfig {
@@ -369,3 +367,4 @@ func SetPublishConfig(cfg PublishConfig) ClientConfig {
 		client.cfgs.publish = cfg
 	}
 }
+*/

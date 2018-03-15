@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/devimteam/amqp/conn"
 	"github.com/devimteam/amqp/logger"
 )
 
@@ -20,10 +19,9 @@ type subscriberOptions struct {
 		warn  logger.Logger
 		error logger.Logger
 	}
-	msgOpts      messageOptions
+	msgOpts      subMessageOptions
 	context      context.Context
 	errorBefore  []ErrorBefore
-	connOpts     []conn.ConnectionOption
 	observerOpts []ObserverOption
 }
 
@@ -31,15 +29,15 @@ func defaultSubOptions() subscriberOptions {
 	opts := subscriberOptions{}
 	opts.processAll = false
 	opts.context = context.Background()
+	opts.wait.flag = true
 	opts.wait.timeout = defaultWaitDeadline
 	opts.channelBuffer = defaultEventBuffer
 	opts.msgOpts.minPriority = MinMessagePriority
 	opts.msgOpts.maxPriority = MaxMessagePriority
-	opts.msgOpts.typer = noopTyper
+	opts.msgOpts.defaultContentType = "application/json"
 	opts.workers = defaultWorkers
 	opts.log.warn = logger.NoopLogger
 	opts.log.error = logger.NoopLogger
-	opts.msgOpts.defaultContentType = "application/json"
 	return opts
 }
 
@@ -123,12 +121,14 @@ func SubSetDefaultContentType(t string) SubscriberOption {
 	}
 }
 
+/*
 // WithConnOptions sets options that should be used to create new connection.
 func SubWithConnOptions(opts ...conn.ConnectionOption) SubscriberOption {
 	return func(subscriber *Subscriber) {
 		subscriber.opts.connOpts = append(subscriber.opts.connOpts, opts...)
 	}
 }
+*/
 
 func SubWithObserverOptions(opts ...ObserverOption) SubscriberOption {
 	return func(subscriber *Subscriber) {

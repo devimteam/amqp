@@ -43,6 +43,18 @@ func (c *Channel) Publish(exchangeName string, msg amqp.Publishing, cfg PublishC
 	)
 }
 
+func (c *Channel) publish(exchangeName string, msg amqp.Publishing, pub Publish) error {
+	c.callMx.Lock()
+	defer c.callMx.Unlock()
+	return c.channel.Publish(
+		exchangeName,
+		pub.Key,
+		pub.Mandatory,
+		pub.Immediate,
+		msg,
+	)
+}
+
 func (c *Channel) Consume(queueName string, cfg ConsumeConfig) (<-chan amqp.Delivery, error) {
 	c.callMx.Lock()
 	defer c.callMx.Unlock()

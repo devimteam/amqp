@@ -71,6 +71,7 @@ type Publish struct {
 	Key       string
 	Mandatory bool
 	Immediate bool
+	Priority  uint8
 }
 
 type ClientV2 struct {
@@ -156,4 +157,10 @@ func (c *ClientV2) Subscriber(opts ...SubscriberOption) *Subscriber {
 	var connection *conn.Connection
 	connection = c.conn
 	return newSubscriber(connection, opts...)
+}
+
+func (c *ClientV2) Publisher(opts ...PublisherOption) *Publisher {
+	var connection *conn.Connection
+	connection = c.conn
+	return newPublisher(connection, opts...)
 }
