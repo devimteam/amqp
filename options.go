@@ -51,10 +51,6 @@ type (
 		observerOpts         []ObserverOption
 	}
 
-	// Function, that should return new message Id.
-	MessageIdBuilder func() string
-	// Function, that should return string representation of type's value.
-	Typer func(value interface{}) string
 	// Function, that changes message before publishing.
 	PublishingBefore func(context.Context, *amqp.Publishing)
 	// Function, that changes message before delivering.

@@ -14,24 +14,8 @@ type (
 		ContentType() string
 	}
 
-	messageOptions struct {
-		pubBefore           []PublishingBefore
-		deliveryBefore      []DeliveryBefore
-		applicationId       string
-		userId              string
-		idBuilder           MessageIdBuilder
-		allowedContentTypes []string
-		minPriority         uint8
-		maxPriority         uint8
-		typer               Typer
-		defaultContentType  string
-	}
 	pubMessageOptions struct {
 		pubBefore          []PublishingBefore
-		applicationId      string
-		userId             string
-		idBuilder          MessageIdBuilder
-		typer              Typer
 		defaultContentType string
 	}
 	subMessageOptions struct {
@@ -47,10 +31,7 @@ var CodecNotFound = errors.New("codec not found")
 
 // constructPublishing uses message options to construct amqp.Publishing.
 func constructPublishing(v interface{}, priority uint8, opts *pubMessageOptions) (msg amqp.Publishing, err error) {
-	msg.AppId = opts.applicationId
-	msg.MessageId = opts.idBuilder()
 	msg.Timestamp = time.Now()
-	msg.Type = opts.typer(v)
 	msg.Priority = priority
 
 	var contentType string

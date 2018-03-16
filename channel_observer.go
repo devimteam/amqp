@@ -1,6 +1,7 @@
 package amqp
 
 import (
+	"context"
 	"math"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ type (
 		lastRevision time.Time
 		options      observerOpts
 		logger       logger.Logger
+		ctx          context.Context
 	}
 	observerOpts struct {
 		idleDuration time.Duration
@@ -74,7 +76,7 @@ func LimitSize(size int) ObserverOption {
 	}
 }
 
-func newObserver(conn *conn.Connection, options ...ObserverOption) *observer {
+func newObserver(ctx context.Context, conn *conn.Connection, options ...ObserverOption) *observer {
 	opts := observerOpts{
 		idleDuration: defaultChannelIdleDuration,
 		min:          0,
@@ -91,11 +93,17 @@ func newObserver(conn *conn.Connection, options ...ObserverOption) *observer {
 		lastRevision: time.Now(),
 		options:      opts,
 		logger:       logger.NoopLogger,
+		ctx:          ctx,
 	}
 	go func() {
 		for {
 			time.Sleep(opts.idleDuration)
-			pool.clear()
+			select {
+			case <-pool.ctx.Done():
+				return
+			default:
+				pool.clear()
+			}
 		}
 	}()
 	return &pool
@@ -114,17 +122,11 @@ func (p *observer) channel() *Channel {
 		case p.counter <- struct{}{}:
 			p.count++
 			ch := Channel{
-				conn: p.conn,
-				declared: declared{
-					exchanges: make(map[string]*ExchangeConfig),
-					queues:    make(map[string]QueueConfig),
-					bindings:  newMatrix(),
-					limits:    p.options.subLimits,
-				},
+				conn:   p.conn,
 				logger: p.logger,
 			}
 			ch.callMx.Lock() // Lock to prevent calls on nil channel. Mutex should be unlocked in `keepalive` function.
-			go ch.keepalive(time.Minute)
+			go ch.keepalive(p.ctx, time.Minute)
 			return &ch
 		}
 	}

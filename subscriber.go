@@ -20,33 +20,33 @@ type (
 	SubscriberOption func(*Subscriber)
 )
 
-func newSubscriber(conn *conn.Connection, opts ...SubscriberOption) *Subscriber {
+func newSubscriber(ctx context.Context, conn *conn.Connection, opts ...SubscriberOption) *Subscriber {
 	s := Subscriber{}
 	s.opts = defaultSubOptions()
 	for _, opt := range opts {
 		opt(&s)
 	}
 	s.conn = conn
-	s.observer = newObserver(s.conn, s.opts.observerOpts...)
+	s.observer = newObserver(ctx, s.conn, s.opts.observerOpts...)
 	return &s
 }
 
-func (s Subscriber) Subscribe(ctx context.Context, exchangeName, queueName string, dataType interface{}, cfg ConsumeConfig) <-chan Event {
+func (s Subscriber) Subscribe(ctx context.Context, exchangeName, queueName string, dataType interface{}, cfg Consumer) <-chan Event {
 	eventChan := make(chan Event, s.opts.channelBuffer)
 	channel := s.observer.channel()
 	go s.listen(ctx, channel, exchangeName, queueName, dataType, eventChan, cfg)
 	return eventChan
 }
 
-func (s Subscriber) SubscribeToQueue(ctx context.Context, queueName string, dataType interface{}, cfg ConsumeConfig) <-chan Event {
+func (s Subscriber) SubscribeToQueue(ctx context.Context, queueName string, dataType interface{}, cfg Consumer) <-chan Event {
 	return s.Subscribe(ctx, "", queueName, dataType, cfg)
 }
 
-func (s Subscriber) SubscribeToExchange(ctx context.Context, exchangeName string, dataType interface{}, cfg ConsumeConfig) <-chan Event {
+func (s Subscriber) SubscribeToExchange(ctx context.Context, exchangeName string, dataType interface{}, cfg Consumer) <-chan Event {
 	return s.Subscribe(ctx, exchangeName, "", dataType, cfg)
 }
 
-func (s Subscriber) listen(ctx context.Context, channel *Channel, exchangeName, queueName string, dataType interface{}, eventChan chan<- Event, cfg ConsumeConfig) {
+func (s Subscriber) listen(ctx context.Context, channel *Channel, exchangeName, queueName string, dataType interface{}, eventChan chan<- Event, cfg Consumer) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -74,7 +74,7 @@ func (s Subscriber) listen(ctx context.Context, channel *Channel, exchangeName, 
 func (s Subscriber) prepareDeliveryChan(
 	channel *Channel,
 	queueName, exchangeName string,
-	cfg ConsumeConfig,
+	cfg Consumer,
 ) (<-chan amqp.Delivery, error) {
 	if queueName == "" {
 		queue, err := channel.declareQueue(Queue{
@@ -95,7 +95,7 @@ func (s Subscriber) prepareDeliveryChan(
 			return nil, WrapError("bind", queue.Name, "to", exchangeName, err)
 		}
 	}
-	ch, err := channel.Consume(queueName, cfg)
+	ch, err := channel.consume(queueName, cfg)
 	if err != nil {
 		return nil, WrapError("channel consume err", err)
 	}

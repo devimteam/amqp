@@ -121,15 +121,6 @@ func SubSetDefaultContentType(t string) SubscriberOption {
 	}
 }
 
-/*
-// WithConnOptions sets options that should be used to create new connection.
-func SubWithConnOptions(opts ...conn.ConnectionOption) SubscriberOption {
-	return func(subscriber *Subscriber) {
-		subscriber.opts.connOpts = append(subscriber.opts.connOpts, opts...)
-	}
-}
-*/
-
 func SubWithObserverOptions(opts ...ObserverOption) SubscriberOption {
 	return func(subscriber *Subscriber) {
 		subscriber.opts.observerOpts = append(subscriber.opts.observerOpts, opts...)

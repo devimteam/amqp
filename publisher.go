@@ -3,10 +3,8 @@ package amqp
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/devimteam/amqp/conn"
-	"github.com/devimteam/amqp/logger"
 )
 
 type Publisher struct {
@@ -16,40 +14,14 @@ type Publisher struct {
 	defaultPublish Publish
 }
 
-type PublisherOption func(*Publisher)
-
-type publisherOptions struct {
-	msgOpts pubMessageOptions
-	wait    struct {
-		flag    bool
-		timeout time.Duration
-	}
-	log struct {
-		warn logger.Logger
-	}
-	observerOpts []ObserverOption
-	workers      int
-}
-
-func defaultPubOptions() publisherOptions {
-	opts := publisherOptions{}
-	opts.wait.flag = true
-	opts.wait.timeout = defaultWaitDeadline
-	opts.msgOpts.idBuilder = noopMessageIdBuilder
-	opts.msgOpts.typer = noopTyper
-	opts.log.warn = logger.NoopLogger
-	opts.msgOpts.defaultContentType = "application/json"
-	return opts
-}
-
-func newPublisher(conn *conn.Connection, opts ...PublisherOption) *Publisher {
+func newPublisher(ctx context.Context, conn *conn.Connection, opts ...PublisherOption) *Publisher {
 	p := Publisher{}
 	p.opts = defaultPubOptions()
 	for _, opt := range opts {
 		opt(&p)
 	}
 	p.conn = conn
-	p.observer = newObserver(p.conn, p.opts.observerOpts...)
+	p.observer = newObserver(ctx, p.conn, p.opts.observerOpts...)
 	return &p
 }
 
