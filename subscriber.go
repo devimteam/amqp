@@ -58,12 +58,12 @@ func (s Subscriber) listen(ctx context.Context, channel *Channel, exchangeName, 
 			if s.opts.wait.flag {
 				err := s.conn.NotifyConnected(s.opts.wait.timeout)
 				if err != nil {
-					s.opts.log.error.Log(err)
+					s.opts.log.Log(err)
 				}
 			}
 			deliveryCh, err := s.prepareDeliveryChan(channel, exchangeName, queueName, cfg)
 			if err != nil {
-				s.opts.log.error.Log(err)
+				s.opts.log.Log(err)
 				continue
 			}
 			s.workersPool(ctx, queueName, deliveryCh, dataType, eventChan)
@@ -150,20 +150,20 @@ func (s Subscriber) processEvent(d amqp.Delivery, dataType interface{}, eventCha
 	err := s.checkEvent(d)
 	if err != nil {
 		err = s.errorBefore(d, err)
-		s.opts.log.warn.Log(err)
+		s.opts.log.Log(err)
 		e := d.Nack(false, true)
 		if e != nil {
-			s.opts.log.error.Log(fmt.Errorf("nack delivery: %v because of %v", e, err))
+			s.opts.log.Log(fmt.Errorf("nack delivery: %v because of %v", e, err))
 		}
 		return
 	}
 	ev, err := s.handleEvent(d, dataType)
 	if err != nil {
 		err = s.errorBefore(d, err)
-		s.opts.log.warn.Log(err)
+		s.opts.log.Log(err)
 		e := d.Nack(false, true)
 		if e != nil {
-			s.opts.log.error.Log(fmt.Errorf("nack delivery: %v because of %v", e, err))
+			s.opts.log.Log(fmt.Errorf("nack delivery: %v because of %v", e, err))
 		}
 		return
 	}

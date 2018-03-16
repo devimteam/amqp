@@ -63,17 +63,17 @@ func (p Publisher) worker(amqpChan *Channel, channel <-chan interface{}, ctx con
 	for obj := range channel {
 		err := p.publish(amqpChan, ctx, exchangeName, obj, pub)
 		if err != nil {
-			p.opts.log.warn.Log(err)
+			p.opts.log.Log(err)
 		}
 	}
 }
 
 func (p Publisher) publish(channel *Channel, ctx context.Context, exchangeName string, v interface{}, publish Publish) error {
-	msg, err := constructPublishing(v, publish.Priority, &p.opts.msgOpts)
+	msg, err := constructPublishing(v, publish.Priority, p.opts.defaultContentType)
 	if err != nil {
 		return err
 	}
-	for _, before := range p.opts.msgOpts.pubBefore {
+	for _, before := range p.opts.before {
 		before(ctx, &msg)
 	}
 	err = channel.publish(exchangeName, msg, publish)

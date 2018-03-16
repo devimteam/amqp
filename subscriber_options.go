@@ -13,12 +13,9 @@ type subscriberOptions struct {
 		flag    bool
 		timeout time.Duration
 	}
-	workers    int
-	processAll bool
-	log        struct {
-		warn  logger.Logger
-		error logger.Logger
-	}
+	workers      int
+	processAll   bool
+	log          logger.Logger
 	msgOpts      subMessageOptions
 	context      context.Context
 	errorBefore  []ErrorBefore
@@ -34,15 +31,14 @@ func defaultSubOptions() subscriberOptions {
 	opts.channelBuffer = defaultEventBuffer
 	opts.msgOpts.minPriority = MinMessagePriority
 	opts.msgOpts.maxPriority = MaxMessagePriority
-	opts.msgOpts.defaultContentType = "application/json"
+	opts.msgOpts.defaultContentType = defaultContentType
 	opts.workers = defaultWorkers
-	opts.log.warn = logger.NoopLogger
-	opts.log.error = logger.NoopLogger
+	opts.log = logger.NoopLogger
 	return opts
 }
 
 // WaitConnection tells client to wait connection before Subscription or Pub executing.
-func SubWaitConnection(should bool, timeout time.Duration) SubscriberOption {
+func SubscriberWaitConnection(should bool, timeout time.Duration) SubscriberOption {
 	return func(subscriber *Subscriber) {
 		subscriber.opts.wait.flag = should
 		if timeout != 0 {
@@ -52,7 +48,7 @@ func SubWaitConnection(should bool, timeout time.Duration) SubscriberOption {
 }
 
 // EventChanBuffer sets the buffer of event channel for Subscription method.
-func SubChannelBuffer(a int) SubscriberOption {
+func SubscriberBufferSize(a int) SubscriberOption {
 	return func(subscriber *Subscriber) {
 		subscriber.opts.channelBuffer = a
 	}
@@ -60,36 +56,29 @@ func SubChannelBuffer(a int) SubscriberOption {
 
 // Context sets root context of Subscription method for each event.
 // context.Background by default.
-func SubContext(ctx context.Context) SubscriberOption {
+func SubscriberContext(ctx context.Context) SubscriberOption {
 	return func(subscriber *Subscriber) {
 		subscriber.opts.context = ctx
 	}
 }
 
 // AllowedPriority rejects messages, which not in range.
-func SubAllowedPriority(from, to uint8) SubscriberOption {
+func SubscriberAllowedPriority(from, to uint8) SubscriberOption {
 	return func(subscriber *Subscriber) {
 		subscriber.opts.msgOpts.minPriority = from
 		subscriber.opts.msgOpts.maxPriority = to
 	}
 }
 
-// ErrorLogger option sets logger, which logs error messages.
-func SubErrorLogger(lg logger.Logger) SubscriberOption {
+// SubscriberLogger option sets logger, which logs error messages.
+func SubscriberLogger(lg logger.Logger) SubscriberOption {
 	return func(subscriber *Subscriber) {
-		subscriber.opts.log.error = lg
-	}
-}
-
-// WarnLogger option sets logger, which logs warning messages.
-func SubWarnLogger(lg logger.Logger) SubscriberOption {
-	return func(subscriber *Subscriber) {
-		subscriber.opts.log.warn = lg
+		subscriber.opts.log = lg
 	}
 }
 
 // DeliverBefore adds functions, that should be called before sending Event to channel.
-func SubDeliverBefore(before ...DeliveryBefore) SubscriberOption {
+func SubscriberDeliverBefore(before ...DeliveryBefore) SubscriberOption {
 	return func(subscriber *Subscriber) {
 		for i := range before {
 			subscriber.opts.msgOpts.deliveryBefore = append(subscriber.opts.msgOpts.deliveryBefore, before[i])

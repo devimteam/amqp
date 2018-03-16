@@ -14,10 +14,6 @@ type (
 		ContentType() string
 	}
 
-	pubMessageOptions struct {
-		pubBefore          []PublishingBefore
-		defaultContentType string
-	}
 	subMessageOptions struct {
 		deliveryBefore      []DeliveryBefore
 		allowedContentTypes []string
@@ -30,7 +26,7 @@ type (
 var CodecNotFound = errors.New("codec not found")
 
 // constructPublishing uses message options to construct amqp.Publishing.
-func constructPublishing(v interface{}, priority uint8, opts *pubMessageOptions) (msg amqp.Publishing, err error) {
+func constructPublishing(v interface{}, priority uint8, defaultContentType string) (msg amqp.Publishing, err error) {
 	msg.Timestamp = time.Now()
 	msg.Priority = priority
 
@@ -39,9 +35,9 @@ func constructPublishing(v interface{}, priority uint8, opts *pubMessageOptions)
 	if ok {
 		msg.ContentType = ct.ContentType()
 		contentType = msg.ContentType
-	} else if opts.defaultContentType != "" {
-		msg.ContentType = opts.defaultContentType
-		contentType = opts.defaultContentType
+	} else if defaultContentType != "" {
+		msg.ContentType = defaultContentType
+		contentType = defaultContentType
 	} else {
 		msg.ContentType = http.DetectContentType(msg.Body)
 	}

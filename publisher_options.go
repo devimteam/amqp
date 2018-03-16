@@ -9,14 +9,13 @@ import (
 type PublisherOption func(*Publisher)
 
 type publisherOptions struct {
-	msgOpts pubMessageOptions
-	wait    struct {
+	before             []PublishingBefore
+	defaultContentType string
+	wait               struct {
 		flag    bool
 		timeout time.Duration
 	}
-	log struct {
-		warn logger.Logger
-	}
+	log          logger.Logger
 	observerOpts []ObserverOption
 	workers      int
 }
@@ -25,16 +24,15 @@ func defaultPubOptions() publisherOptions {
 	opts := publisherOptions{}
 	opts.wait.flag = true
 	opts.wait.timeout = defaultWaitDeadline
-	opts.msgOpts.idBuilder = noopMessageIdBuilder
-	opts.msgOpts.typer = noopTyper
-	opts.log.warn = logger.NoopLogger
-	opts.msgOpts.defaultContentType = "application/json"
+	opts.log = logger.NoopLogger
+	opts.defaultContentType = defaultContentType
+	opts.workers = defaultWorkers
 	return opts
 }
 
 // WaitConnection tells client to wait connection before Subscription or Pub executing.
-func SubWaitConnection(should bool, timeout time.Duration) SubscriberOption {
-	return func(subscriber *Subscriber) {
+func PublisherWaitConnection(should bool, timeout time.Duration) PublisherOption {
+	return func(subscriber *Publisher) {
 		subscriber.opts.wait.flag = should
 		if timeout != 0 {
 			subscriber.opts.wait.timeout = timeout
@@ -43,23 +41,31 @@ func SubWaitConnection(should bool, timeout time.Duration) SubscriberOption {
 }
 
 // PublishBefore adds functions, that should be called before publishing message to broker.
-func PublishBefore(before ...PublishingBefore) Option {
-	return func(options *options) {
-		for i := range before {
-			options.msgOpts.pubBefore = append(options.msgOpts.pubBefore, before[i])
-		}
+func PublisherBefore(before ...PublishingBefore) PublisherOption {
+	return func(publisher *Publisher) {
+		publisher.opts.before = append(publisher.opts.before, before...)
 	}
 }
 
 // WarnLogger option sets logger, which logs warning messages.
-func WarnLogger(lg logger.Logger) Option {
-	return func(options *options) {
-		options.log.warn = lg
+func PublisherLogger(lg logger.Logger) PublisherOption {
+	return func(publisher *Publisher) {
+		publisher.opts.log = lg
 	}
 }
 
-func SubWithObserverOptions(opts ...ObserverOption) SubscriberOption {
-	return func(subscriber *Subscriber) {
-		subscriber.opts.observerOpts = append(subscriber.opts.observerOpts, opts...)
+func PublisherWithObserverOptions(opts ...ObserverOption) PublisherOption {
+	return func(publisher *Publisher) {
+		publisher.opts.observerOpts = append(publisher.opts.observerOpts, opts...)
+	}
+}
+
+// HandlersAmount sets the amount of handle processes, which receive deliveries from one channel.
+// For n > 1 client does not guarantee the order of events.
+func PublisherHandlersAmount(n int) PublisherOption {
+	return func(publisher *Publisher) {
+		if n > 0 {
+			publisher.opts.workers = n
+		}
 	}
 }
