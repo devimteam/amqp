@@ -44,6 +44,7 @@ func defaultPubOptions() publisherOptions {
 
 func newPublisher(conn *conn.Connection, opts ...PublisherOption) *Publisher {
 	p := Publisher{}
+	p.opts = defaultPubOptions()
 	for _, opt := range opts {
 		opt(&p)
 	}
@@ -52,7 +53,7 @@ func newPublisher(conn *conn.Connection, opts ...PublisherOption) *Publisher {
 	return &p
 }
 
-func (p *Publisher) Publish(ctx context.Context, exchangeName string, obj interface{}, pub Publish) error {
+func (p Publisher) Publish(ctx context.Context, exchangeName string, obj interface{}, pub Publish) error {
 	channel := p.observer.channel()
 	if p.opts.wait.flag {
 		err := p.conn.NotifyConnected(p.opts.wait.timeout)
@@ -64,7 +65,7 @@ func (p *Publisher) Publish(ctx context.Context, exchangeName string, obj interf
 	return p.publish(channel, ctx, exchangeName, obj, pub)
 }
 
-func (p *Publisher) PublishChannel(ctx context.Context, exchangeName string, pub Publish) chan<- interface{} {
+func (p Publisher) PublishChannel(ctx context.Context, exchangeName string, pub Publish) chan<- interface{} {
 	channel := make(chan interface{})
 	go func() {
 		amqpChan := p.observer.channel()
@@ -74,7 +75,7 @@ func (p *Publisher) PublishChannel(ctx context.Context, exchangeName string, pub
 	return channel
 }
 
-func (p *Publisher) workerPool(amqpChan *Channel, channel <-chan interface{}, ctx context.Context, exchangeName string, pub Publish) {
+func (p Publisher) workerPool(amqpChan *Channel, channel <-chan interface{}, ctx context.Context, exchangeName string, pub Publish) {
 	var wg sync.WaitGroup
 	wg.Add(p.opts.workers)
 	for i := 0; i < p.opts.workers; i++ {
@@ -86,7 +87,7 @@ func (p *Publisher) workerPool(amqpChan *Channel, channel <-chan interface{}, ct
 	wg.Wait()
 }
 
-func (p *Publisher) worker(amqpChan *Channel, channel <-chan interface{}, ctx context.Context, exchangeName string, pub Publish) {
+func (p Publisher) worker(amqpChan *Channel, channel <-chan interface{}, ctx context.Context, exchangeName string, pub Publish) {
 	for obj := range channel {
 		err := p.publish(amqpChan, ctx, exchangeName, obj, pub)
 		if err != nil {
@@ -95,7 +96,7 @@ func (p *Publisher) worker(amqpChan *Channel, channel <-chan interface{}, ctx co
 	}
 }
 
-func (p *Publisher) publish(channel *Channel, ctx context.Context, exchangeName string, v interface{}, publish Publish) error {
+func (p Publisher) publish(channel *Channel, ctx context.Context, exchangeName string, v interface{}, publish Publish) error {
 	msg, err := constructPublishing(v, publish.Priority, &p.opts.msgOpts)
 	if err != nil {
 		return err

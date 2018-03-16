@@ -2,6 +2,7 @@
 package conn
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -19,7 +20,8 @@ type (
 		logger      logger.Logger
 		state       connectionState
 		notifier    Notifier
-		done        chan Signal
+		ctx         context.Context
+		done        func()
 		maxAttempts int
 	}
 )
@@ -29,6 +31,7 @@ func newConnection(opts ...ConnectionOption) *Connection {
 	for i := range opts {
 		opts[i](&c)
 	}
+	c.ctx, c.done = context.WithCancel(c.ctx)
 	return &c
 }
 
@@ -36,7 +39,7 @@ func defaultConnection() Connection {
 	return Connection{
 		backoffer:   Backoffer(defaultMinInterval, defaultMaxInterval, defaultFactor, defaultJitter),
 		logger:      logger.NoopLogger,
-		done:        make(chan Signal),
+		ctx:         context.Background(),
 		maxAttempts: -1,
 		conn:        &amqp.Connection{},
 	}
@@ -67,7 +70,7 @@ ConnectionLoop:
 			delayCh <- Signal{}
 		}()
 		select {
-		case <-c.done:
+		case <-c.ctx.Done():
 			c.logger.Log(CanceledError)
 			return
 		case <-delayCh:
@@ -84,7 +87,7 @@ ConnectionLoop:
 					c.logger.Log(fmt.Errorf("connection closed: %v", e))
 					c.notifier.Notify()
 					c.connect(dialer)
-				case <-c.done:
+				case <-c.ctx.Done():
 					c.logger.Log(CanceledError)
 					connection.Close()
 					c.notifier.Notify()
@@ -134,7 +137,7 @@ func (c *Connection) NotifyClose() <-chan Signal {
 }
 
 func (c *Connection) Close() error {
-	c.done <- Signal{}
+	c.done()
 	return c.conn.Close()
 }
 

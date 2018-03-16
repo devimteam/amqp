@@ -1,6 +1,7 @@
 package amqp
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sync"
@@ -30,26 +31,25 @@ func newSubscriber(conn *conn.Connection, opts ...SubscriberOption) *Subscriber 
 	return &s
 }
 
-func (s *Subscriber) Subscribe(exchangeName, queueName string, dataType interface{}, cfg ConsumeConfig) (<-chan Event, chan<- conn.Signal) {
+func (s Subscriber) Subscribe(ctx context.Context, exchangeName, queueName string, dataType interface{}, cfg ConsumeConfig) <-chan Event {
 	eventChan := make(chan Event, s.opts.channelBuffer)
-	doneCh := make(chan conn.Signal)
 	channel := s.observer.channel()
-	go s.listen(channel, exchangeName, queueName, dataType, eventChan, doneCh, cfg)
-	return eventChan, doneCh
+	go s.listen(ctx, channel, exchangeName, queueName, dataType, eventChan, cfg)
+	return eventChan
 }
 
-func (s *Subscriber) SubscribeToQueue(queueName string, dataType interface{}, cfg ConsumeConfig) (<-chan Event, chan<- conn.Signal) {
-	return s.Subscribe("", queueName, dataType, cfg)
+func (s Subscriber) SubscribeToQueue(ctx context.Context, queueName string, dataType interface{}, cfg ConsumeConfig) <-chan Event {
+	return s.Subscribe(ctx, "", queueName, dataType, cfg)
 }
 
-func (s *Subscriber) SubscribeToExchange(exchangeName string, dataType interface{}, cfg ConsumeConfig) (<-chan Event, chan<- conn.Signal) {
-	return s.Subscribe(exchangeName, "", dataType, cfg)
+func (s Subscriber) SubscribeToExchange(ctx context.Context, exchangeName string, dataType interface{}, cfg ConsumeConfig) <-chan Event {
+	return s.Subscribe(ctx, exchangeName, "", dataType, cfg)
 }
 
-func (s *Subscriber) listen(channel *Channel, exchangeName, queueName string, dataType interface{}, eventChan chan<- Event, doneChan <-chan conn.Signal, cfg ConsumeConfig) {
+func (s Subscriber) listen(ctx context.Context, channel *Channel, exchangeName, queueName string, dataType interface{}, eventChan chan<- Event, cfg ConsumeConfig) {
 	for {
 		select {
-		case <-doneChan:
+		case <-ctx.Done():
 			if channel != nil {
 				s.observer.release(channel)
 			}
@@ -66,12 +66,12 @@ func (s *Subscriber) listen(channel *Channel, exchangeName, queueName string, da
 				s.opts.log.error.Log(err)
 				continue
 			}
-			s.workersPool(queueName, deliveryCh, dataType, eventChan, doneChan)
+			s.workersPool(ctx, queueName, deliveryCh, dataType, eventChan)
 		}
 	}
 }
 
-func (s *Subscriber) prepareDeliveryChan(
+func (s Subscriber) prepareDeliveryChan(
 	channel *Channel,
 	queueName, exchangeName string,
 	cfg ConsumeConfig,
@@ -103,30 +103,30 @@ func (s *Subscriber) prepareDeliveryChan(
 }
 
 // workersPool wraps processEvents with WorkerPool pattern.
-func (s *Subscriber) workersPool(
+func (s Subscriber) workersPool(
+	ctx context.Context,
 	queueName string,
 	deliveryCh <-chan amqp.Delivery,
 	dataType interface{},
 	eventChan chan<- Event,
-	doneChan <-chan conn.Signal,
 ) {
 	var wg sync.WaitGroup
 	wg.Add(s.opts.workers)
 	for i := 0; i < s.opts.workers; i++ {
 		go func() {
-			s.processEvents(queueName, deliveryCh, dataType, eventChan, doneChan)
+			s.processEvents(ctx, queueName, deliveryCh, dataType, eventChan)
 			wg.Done()
 		}()
 	}
 	wg.Wait()
 }
 
-func (s *Subscriber) processEvents(
+func (s Subscriber) processEvents(
+	ctx context.Context,
 	queueName string,
 	deliveryCh <-chan amqp.Delivery,
 	dataType interface{},
 	eventChan chan<- Event,
-	doneChan <-chan conn.Signal,
 ) {
 	processedAll := false
 	for {
@@ -137,7 +137,7 @@ func (s *Subscriber) processEvents(
 				return
 			}
 			s.processEvent(d, dataType, eventChan)
-		case <-doneChan:
+		case <-ctx.Done():
 			if s.opts.processAll && processedAll {
 				close(eventChan)
 				return
@@ -146,7 +146,7 @@ func (s *Subscriber) processEvents(
 	}
 }
 
-func (s *Subscriber) processEvent(d amqp.Delivery, dataType interface{}, eventChan chan<- Event) {
+func (s Subscriber) processEvent(d amqp.Delivery, dataType interface{}, eventChan chan<- Event) {
 	err := s.checkEvent(d)
 	if err != nil {
 		err = s.errorBefore(d, err)
@@ -170,7 +170,7 @@ func (s *Subscriber) processEvent(d amqp.Delivery, dataType interface{}, eventCh
 	eventChan <- ev
 }
 
-func (s *Subscriber) checkEvent(d amqp.Delivery) error {
+func (s Subscriber) checkEvent(d amqp.Delivery) error {
 	priorityOk := s.opts.msgOpts.minPriority <= d.Priority && d.Priority <= s.opts.msgOpts.maxPriority
 	if !priorityOk {
 		return NotAllowedPriority
@@ -178,7 +178,7 @@ func (s *Subscriber) checkEvent(d amqp.Delivery) error {
 	return nil
 }
 
-func (s *Subscriber) handleEvent(d amqp.Delivery, dataType interface{}) (ev Event, err error) {
+func (s Subscriber) handleEvent(d amqp.Delivery, dataType interface{}) (ev Event, err error) {
 	ctx := s.opts.context
 	for _, before := range s.opts.msgOpts.deliveryBefore {
 		ctx = before(ctx, &d)
@@ -200,7 +200,7 @@ func (s *Subscriber) handleEvent(d amqp.Delivery, dataType interface{}) (ev Even
 }
 
 // ErrorBefore allows user to update error messages before logging.
-func (s *Subscriber) errorBefore(d amqp.Delivery, err error) error {
+func (s Subscriber) errorBefore(d amqp.Delivery, err error) error {
 	for _, before := range s.opts.errorBefore {
 		err = before(d, err)
 	}

@@ -1,6 +1,7 @@
 package conn
 
 import (
+	"context"
 	"time"
 
 	"github.com/devimteam/amqp/logger"
@@ -30,10 +31,11 @@ func WithDelay(min, max time.Duration) ConnectionOption {
 	}
 }
 
-// WithCancel gives ability to stop connection loop, when cancel channel closes or something sends to it.
-func WithCancel(cancel chan Signal) ConnectionOption {
+// WithContext allows use power of Context in connection loop.
+// Common use-case: reconnection cancellation.
+func WithContext(ctx context.Context) ConnectionOption {
 	return func(connection *Connection) {
-		connection.done = cancel
+		connection.ctx = ctx
 	}
 }
 
