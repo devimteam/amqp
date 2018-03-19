@@ -40,18 +40,22 @@ type Client struct {
 	bindings  []Binding
 	conn      *conn.Connection
 	observer  *observer
-	connector conn.Connector
-	logger    logger.Logger
-	done      func()
-	ctx       context.Context
+	//connector conn.Connector
+	logger logger.Logger
+	done   func()
+	ctx    context.Context
 }
 
-func NewClientV2(connector conn.Connector, decls ...Declaration) (cl Client, err error) {
+func NewClient(connector conn.Connector, decls ...Declaration) (cl Client, err error) {
 	cl.constructorBefore(decls...)
 	ctx, done := context.WithCancel(context.Background())
 	cl.done = done
-	cl.connector = connector
-	cl.conn, _ = connector()
+	cl.ctx = ctx
+	//cl.connector = connector
+	cl.conn, err = connector()
+	if err != nil {
+		return
+	}
 	cl.observer = newObserver(ctx, cl.conn, Min(1), Max(1))
 	cl.declare()
 	go func() {
@@ -73,6 +77,7 @@ func NewClientV2(connector conn.Connector, decls ...Declaration) (cl Client, err
 }
 
 func (c *Client) constructorBefore(decls ...Declaration) {
+	c.logger = logger.NoopLogger
 	withDeclarations(c, decls...)
 }
 
@@ -153,6 +158,26 @@ func (e Exchange) declare(c *Client) {
 	c.exchanges = append(c.exchanges, e)
 }
 
+func TemporaryExchange(name string) Exchange {
+	return Exchange{
+		Name:       name,
+		Kind:       "fanout",
+		Durable:    false,
+		AutoDelete: true,
+		Internal:   false,
+		NoWait:     false,
+	}
+}
+
+func LongExchange(name string) Exchange {
+	return Exchange{
+		Name:       name,
+		Kind:       "fanout",
+		Durable:    true,
+		AutoDelete: false,
+	}
+}
+
 type Queue struct {
 	Name       string
 	Durable    bool
@@ -160,6 +185,14 @@ type Queue struct {
 	Exclusive  bool
 	NoWait     bool
 	Args       amqp.Table
+}
+
+func LongQueue(name string) Queue {
+	return Queue{
+		Name:       name,
+		Durable:    true,
+		AutoDelete: false,
+	}
 }
 
 func (q Queue) declare(c *Client) {

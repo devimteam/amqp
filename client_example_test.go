@@ -1,5 +1,6 @@
 package amqp
 
+/*
 import (
 	"context"
 	"fmt"
@@ -65,3 +66,4 @@ func Example_common() {
 	}
 	time.Sleep(time.Second * 5) // wait for delivering all events
 }
+*/

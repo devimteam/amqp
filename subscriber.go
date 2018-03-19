@@ -48,6 +48,7 @@ func (s Subscriber) SubscribeToExchange(ctx context.Context, exchangeName string
 
 func (s Subscriber) listen(ctx context.Context, channel *Channel, exchangeName, queueName string, dataType interface{}, eventChan chan<- Event, cfg Consumer) {
 	for {
+		fmt.Println("listen: select")
 		select {
 		case <-ctx.Done():
 			if channel != nil {
@@ -56,26 +57,29 @@ func (s Subscriber) listen(ctx context.Context, channel *Channel, exchangeName, 
 			return
 		default:
 			if s.opts.wait.flag {
+				fmt.Println("listen: wait")
 				err := s.conn.NotifyConnected(s.opts.wait.timeout)
 				if err != nil {
 					s.opts.log.Log(err)
 				}
 			}
+			fmt.Println("listen: prepare")
 			deliveryCh, err := s.prepareDeliveryChan(channel, exchangeName, queueName, cfg)
 			if err != nil {
 				s.opts.log.Log(err)
 				continue
 			}
+			fmt.Println("listen: pool")
 			s.workersPool(ctx, queueName, deliveryCh, dataType, eventChan)
 		}
 	}
 }
 
 func (s Subscriber) prepareDeliveryChan(
-	channel *Channel,
-	queueName, exchangeName string,
-	cfg Consumer,
-) (<-chan amqp.Delivery, error) {
+	channel *Channel, exchangeName, queueName string, cfg Consumer,
+) (
+	<-chan amqp.Delivery, error,
+) {
 	if queueName == "" {
 		queue, err := channel.declareQueue(Queue{
 			AutoDelete: true,
@@ -179,7 +183,7 @@ func (s Subscriber) checkEvent(d amqp.Delivery) error {
 }
 
 func (s Subscriber) handleEvent(d amqp.Delivery, dataType interface{}) (ev Event, err error) {
-	ctx := s.opts.context
+	ctx := context.Background()
 	for _, before := range s.opts.msgOpts.deliveryBefore {
 		ctx = before(ctx, &d)
 	}

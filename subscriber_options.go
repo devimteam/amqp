@@ -1,7 +1,6 @@
 package amqp
 
 import (
-	"context"
 	"time"
 
 	"github.com/devimteam/amqp/logger"
@@ -17,7 +16,6 @@ type subscriberOptions struct {
 	processAll   bool
 	log          logger.Logger
 	msgOpts      subMessageOptions
-	context      context.Context
 	errorBefore  []ErrorBefore
 	observerOpts []ObserverOption
 }
@@ -25,7 +23,6 @@ type subscriberOptions struct {
 func defaultSubOptions() subscriberOptions {
 	opts := subscriberOptions{}
 	opts.processAll = false
-	opts.context = context.Background()
 	opts.wait.flag = true
 	opts.wait.timeout = defaultWaitDeadline
 	opts.channelBuffer = defaultEventBuffer
@@ -51,14 +48,6 @@ func SubscriberWaitConnection(should bool, timeout time.Duration) SubscriberOpti
 func SubscriberBufferSize(a int) SubscriberOption {
 	return func(subscriber *Subscriber) {
 		subscriber.opts.channelBuffer = a
-	}
-}
-
-// Context sets root context of Subscription method for each event.
-// context.Background by default.
-func SubscriberContext(ctx context.Context) SubscriberOption {
-	return func(subscriber *Subscriber) {
-		subscriber.opts.context = ctx
 	}
 }
 
