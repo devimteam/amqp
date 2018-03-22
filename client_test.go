@@ -2,7 +2,10 @@ package amqp
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +13,8 @@ import (
 	"github.com/devimteam/amqp/conn"
 	"github.com/devimteam/amqp/logger"
 )
+
+var DEBUG = flag.Bool("debug", false, "Activate pprof")
 
 const testExchangeName = "amqp-client-test"
 
@@ -42,8 +47,9 @@ func (s *XStorage) Consume(val int) {
 func (s *XStorage) Check() bool {
 	s.m.Lock()
 	defer s.m.Unlock()
-	for _, v := range s.storage {
+	for k, v := range s.storage {
 		if v < 0 || v > 0 {
+			fmt.Println(k, ":", v)
 			return true
 		}
 	}
@@ -52,6 +58,17 @@ func (s *XStorage) Check() bool {
 
 func (s *XStorage) Error() string {
 	return fmt.Sprint(s.storage)
+}
+
+func TestMain(t *testing.M) {
+	flag.Parse()
+	if *DEBUG {
+		go func() {
+			fmt.Println("serving profiler")
+			fmt.Println(http.ListenAndServe(":6060", nil))
+		}()
+	}
+	t.Run()
 }
 
 func TestNewClient(t *testing.T) {
@@ -89,37 +106,12 @@ func TestNewClient2(t *testing.T) {
 	}
 }
 
-/*
 func TestHighLoad(t *testing.T) {
 	ch := make(chan []interface{})
 	store := NewXStorage(8)
-	queuecfg := DefaultQueueConfig()
-	queuecfg.AutoDelete = true
 	go listenAndPrintlnSuff("recon", ch)
-	cl1, err := NewClient("amqp://localhost:5672",
-		WithOptions(
-			SetMessageIdBuilder(CommonMessageIdBuilder),
-		),
-		WithConnOptions(
-			conn.WithLogger(logger.NewChanLogger(ch)),
-		),
-		SetQueueConfig(queuecfg),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cl2, err := NewClient("amqp://localhost:5672",
-		WithOptions(
-			SetMessageIdBuilder(CommonMessageIdBuilder),
-		),
-		WithConnOptions(
-			conn.WithLogger(logger.NewChanLogger(ch)),
-		),
-		SetQueueConfig(queuecfg),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cl1 := initClient(t, TemporaryExchange(testExchangeName))
+	cl2 := initClient(t, TemporaryExchange(testExchangeName))
 	var wg sync.WaitGroup
 	wg.Add(12)
 	{
@@ -156,14 +148,8 @@ func TestHighLoad(t *testing.T) {
 func TestLong(t *testing.T) {
 	ch := make(chan []interface{})
 	store := NewXStorage(1)
-	queuecfg := DefaultQueueConfig()
-	queuecfg.AutoDelete = true
 	go listenAndPrintlnSuff("recon", ch)
-	cl, err := NewClient("amqp://localhost:5672", WithConnOptions(conn.WithLogger(logger.NewChanLogger(ch))), SetQueueConfig(queuecfg),
-		WithOptions(DebugLogger(logger.NewChanLogger(ch))))
-	if err != nil {
-		t.Fatal(err)
-	}
+	cl := initClient(t, TemporaryExchange(testExchangeName))
 	go subFunc("sub", cl, store)
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -178,38 +164,26 @@ func TestLong(t *testing.T) {
 
 func TestLimits(t *testing.T) {
 	ch := make(chan []interface{})
-	store := NewXStorage(1)
-	queuecfg := DefaultQueueConfig()
-	queuecfg.Name = "aaaa"
+	store := NewXStorage(2)
 	go listenAndPrintlnSuff("recon", ch)
-	cl, err := NewClient("amqp://localhost:5672",
-		WithConnOptions(conn.WithLogger(logger.NewChanLogger(ch))), SetQueueConfig(queuecfg),
-		WithObserverOptions(LimitCount(5)),
-		WithOptions(DebugLogger(logger.NewChanLogger(ch))))
-	if err != nil {
-		t.Fatal(err)
-	}
-	go fatSubFunc("sub", cl, store)
-	go fatSubFunc("sub2", cl, store)
-	go fatSubFunc("sub3", cl, store)
-	go fatSubFunc("sub4", cl, store)
-	go fatSubFunc("sub5", cl, store)
+	cl := initClient(t, TemporaryExchange(testExchangeName))
+	go fatSubFunc("sub", cl, store, SubscriberLogger(logger.NewChanLogger(ch)))
+	go fatSubFunc("sub2", cl, store, SubscriberLogger(logger.NewChanLogger(ch)))
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go pubFuncGroup("c1p1", 0, 100, cl, time.Millisecond, &wg, store)
+	go pubFuncGroup("c1p1", 0, 30, cl, time.Millisecond, &wg, store)
 	wg.Wait()
-	time.Sleep(time.Second * 25)
+	time.Sleep(time.Second * 35)
 	if store.Check() {
 		t.Fatal(store.Error())
 	}
 }
-*/
+
 func subFunc(prefix string, client Client, storage *XStorage) { //, options ...ClientConfig) {
 	ch := make(chan []interface{})
 	go listenAndPrintln(ch)
 	s := client.Subscriber(SubscriberLogger(logger.NewChanLogger(ch)))
 	events := s.SubscribeToExchange(context.Background(), testExchangeName, X{}, Consumer{})
-	//events, _ := client.Subscriber()testExchangeName, X{}, append(options, WithOptions(AllLoggers(logger.NewChanLogger(ch))))...)
 	for ev := range events {
 		fmt.Println(prefix, "event data: ", ev.Data)
 		storage.Consume(ev.Data.(*X).Num)
@@ -218,11 +192,11 @@ func subFunc(prefix string, client Client, storage *XStorage) { //, options ...C
 	fmt.Println("end of events")
 }
 
-func fatSubFunc(prefix string, client Client, storage *XStorage) { //, options ...ClientConfig) {
+func fatSubFunc(prefix string, client Client, storage *XStorage, options ...SubscriberOption) {
 	ch := make(chan []interface{})
 	go listenAndPrintln(ch)
-	s := client.Subscriber()
-	events := s.SubscribeToExchange(context.Background(), testExchangeName, X{}, Consumer{})
+	s := client.Subscriber(options...)
+	events := s.SubscribeToExchange(context.Background(), testExchangeName, X{}, Consumer{LimitCount: 5})
 	for ev := range events {
 		fmt.Println(prefix, "event data: ", ev.Data)
 		storage.Consume(ev.Data.(*X).Num)

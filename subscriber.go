@@ -48,7 +48,6 @@ func (s Subscriber) SubscribeToExchange(ctx context.Context, exchangeName string
 
 func (s Subscriber) listen(ctx context.Context, channel *Channel, exchangeName, queueName string, dataType interface{}, eventChan chan<- Event, cfg Consumer) {
 	for {
-		fmt.Println("listen: select")
 		select {
 		case <-ctx.Done():
 			if channel != nil {
@@ -57,19 +56,16 @@ func (s Subscriber) listen(ctx context.Context, channel *Channel, exchangeName, 
 			return
 		default:
 			if s.opts.wait.flag {
-				fmt.Println("listen: wait")
 				err := s.conn.NotifyConnected(s.opts.wait.timeout)
 				if err != nil {
 					s.opts.log.Log(err)
 				}
 			}
-			fmt.Println("listen: prepare")
 			deliveryCh, err := s.prepareDeliveryChan(channel, exchangeName, queueName, cfg)
 			if err != nil {
 				s.opts.log.Log(err)
 				continue
 			}
-			fmt.Println("listen: pool")
 			s.workersPool(ctx, queueName, deliveryCh, dataType, eventChan)
 		}
 	}
@@ -97,6 +93,12 @@ func (s Subscriber) prepareDeliveryChan(
 		})
 		if err != nil {
 			return nil, WrapError("bind", queue.Name, "to", exchangeName, err)
+		}
+	}
+	if cfg.LimitCount > 0 || cfg.LimitSize > 0 {
+		err := channel.qos(cfg.LimitCount, cfg.LimitSize)
+		if err != nil {
+			return nil, WrapError("channel qos err", err)
 		}
 	}
 	ch, err := channel.consume(queueName, cfg)

@@ -40,10 +40,9 @@ type Client struct {
 	bindings  []Binding
 	conn      *conn.Connection
 	observer  *observer
-	//connector conn.Connector
-	logger logger.Logger
-	done   func()
-	ctx    context.Context
+	logger    logger.Logger
+	done      func()
+	ctx       context.Context
 }
 
 func NewClient(connector conn.Connector, decls ...Declaration) (cl Client, err error) {
@@ -51,7 +50,6 @@ func NewClient(connector conn.Connector, decls ...Declaration) (cl Client, err e
 	ctx, done := context.WithCancel(context.Background())
 	cl.done = done
 	cl.ctx = ctx
-	//cl.connector = connector
 	cl.conn, err = connector()
 	if err != nil {
 		return
@@ -218,12 +216,14 @@ func (b Binding) declare(c *Client) {
 }
 
 type Consumer struct {
-	Consumer  string
-	AutoAck   bool
-	Exclusive bool
-	NoLocal   bool
-	NoWait    bool
-	Args      amqp.Table
+	Consumer   string
+	AutoAck    bool
+	Exclusive  bool
+	NoLocal    bool
+	NoWait     bool
+	Args       amqp.Table
+	LimitCount int
+	LimitSize  int
 }
 
 type Publish struct {

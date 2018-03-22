@@ -47,6 +47,12 @@ func (c *Channel) consume(queueName string, cfg Consumer) (<-chan amqp.Delivery,
 	)
 }
 
+func (c *Channel) qos(count, size int) error {
+	c.callMx.Lock()
+	defer c.callMx.Unlock()
+	return c.channel.Qos(count, size, false)
+}
+
 func (c *Channel) declareExchange(exchange Exchange) error {
 	c.callMx.Lock()
 	defer c.callMx.Unlock()
