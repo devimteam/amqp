@@ -156,6 +156,7 @@ func (e Exchange) declare(c *Client) {
 	c.exchanges = append(c.exchanges, e)
 }
 
+// TemporaryExchange is a common way to create temporary exchange with given name.
 func TemporaryExchange(name string) Exchange {
 	return Exchange{
 		Name:       name,
@@ -167,6 +168,7 @@ func TemporaryExchange(name string) Exchange {
 	}
 }
 
+// LongExchange is a common way to declare exchange with given name.
 func LongExchange(name string) Exchange {
 	return Exchange{
 		Name:       name,
@@ -185,6 +187,7 @@ type Queue struct {
 	Args       amqp.Table
 }
 
+// LongExchange is a common way to declare queue with given name.
 func LongQueue(name string) Queue {
 	return Queue{
 		Name:       name,
@@ -200,6 +203,7 @@ func (q Queue) declare(c *Client) {
 	c.queues = append(c.queues, q)
 }
 
+// Binding is used for bind exchange and queue.
 type Binding struct {
 	Exchange string
 	Queue    string

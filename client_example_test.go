@@ -1,6 +1,5 @@
 package amqp
 
-/*
 import (
 	"context"
 	"fmt"
@@ -27,38 +26,30 @@ func Example_common() {
 	}()
 	lg := logger.NewChanLogger(ch)
 
-	// Change configuration.
-	queuecfg := DefaultQueueConfig()
-	queuecfg.AutoDelete = true
-
-	client, err := NewClient("amqp://localhost:5672",
-		WithOptions(
-			WaitConnection(true, time.Minute),
-			ApplicationId("example app"),
-			WarnLogger(lg),
-			ErrorLogger(lg),
-		),
-		WithConnOptions(
-			conn.WithLogger(lg), // We want to know connection status and errors.
-		),
-		SetQueueConfig(queuecfg),
+	client, err := NewClient(conn.DefaultConnector(
+		"amqp://localhost:5672",
+		conn.WithLogger(lg), // We want to know connection status and errors.
+	),
+		TemporaryExchange("example-exchange"),
 	)
 	if err != nil {
 		panic(err)
 	}
-	eventChan, _ := client.Subscription("example-exchange", Comment{})
+	subscriber := client.Subscriber()
+	eventChan := subscriber.SubscribeToExchange(context.Background(), "example-exchange", Comment{}, Consumer{})
 	go func() {
 		for event := range eventChan {
 			fmt.Println(event.Data) // do something with events
 		}
 	}()
+	publisher := client.Publisher()
 	for i := 0; i < 10; i++ {
 		// Prepare your data before publishing
 		comment := Comment{
 			Id:      strconv.Itoa(i),
 			Message: "message " + strconv.Itoa(i),
 		}
-		err := client.Pub(context.Background(), "example-exchange", comment)
+		err := publisher.Publish(context.Background(), "example-exchange", comment, Publish{})
 		if err != nil {
 			panic(err)
 		}
@@ -66,4 +57,3 @@ func Example_common() {
 	}
 	time.Sleep(time.Second * 5) // wait for delivering all events
 }
-*/
