@@ -178,6 +178,25 @@ func LongExchange(name string) Exchange {
 	}
 }
 
+type Exchanges []Exchange
+
+func (e Exchanges) declare(c *Client) {
+	for i := range e {
+		if e[i].Name == "" {
+			panic("exchange name can't be empty")
+		}
+		c.exchanges = append(c.exchanges, e[i])
+	}
+}
+
+// PersistentExchanges allow you to declare a bunch of exchanges with given names.
+func PersistentExchanges(names ...string) (e Exchanges) {
+	for i := range names {
+		e = append(e, LongExchange(names[i]))
+	}
+	return
+}
+
 type Queue struct {
 	Name       string
 	Durable    bool
@@ -187,7 +206,7 @@ type Queue struct {
 	Args       amqp.Table
 }
 
-// LongExchange is a common way to declare queue with given name.
+// LongQueue is a common way to declare queue with given name.
 func LongQueue(name string) Queue {
 	return Queue{
 		Name:       name,
@@ -201,6 +220,25 @@ func (q Queue) declare(c *Client) {
 		panic("do not declare queue with empty name")
 	}
 	c.queues = append(c.queues, q)
+}
+
+type Queues []Queue
+
+func (q Queues) declare(c *Client) {
+	for i := range q {
+		if q[i].Name == "" {
+			panic("queue name can't be empty")
+		}
+		c.queues = append(c.queues, q[i])
+	}
+}
+
+// PersistentQueues allow you to declare a bunch of queues with given names.
+func PersistentQueues(names ...string) (e Queues) {
+	for i := range names {
+		e = append(e, LongQueue(names[i]))
+	}
+	return
 }
 
 // Binding is used for bind exchange and queue.
