@@ -274,3 +274,12 @@ type Publish struct {
 	Immediate bool
 	Priority  uint8
 }
+
+// WithLogger set logger for client, which will report declaration problems and so on.
+type WithLogger struct {
+	logger.Logger
+}
+
+func (b WithLogger) declare(c *Client) {
+	c.logger = b.Logger
+}
