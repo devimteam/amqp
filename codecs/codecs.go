@@ -4,6 +4,12 @@ import (
 	"sync"
 )
 
+const (
+	JSONCodecName  = "application/json"
+	ProtoCodecName = "application/protobuf"
+	XMLCodecName   = "application/xml"
+)
+
 // Codec is an interface that encodes message on pub and decodes it on sub.
 type Codec interface {
 	Encoder
@@ -20,9 +26,9 @@ var Register = register{codecs: make(map[string]Codec)}
 
 func init() {
 	Register.Register("", &JSONCodec{})
-	Register.Register("application/json", &JSONCodec{})
-	Register.Register("application/xml", &XMLCodec{})
-	Register.Register("application/protobuf", &ProtobufCodec{})
+	Register.Register(JSONCodecName, &JSONCodec{})
+	Register.Register(XMLCodecName, &XMLCodec{})
+	Register.Register(ProtoCodecName, &ProtobufCodec{})
 }
 
 type register struct {

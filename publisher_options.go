@@ -69,3 +69,9 @@ func PublisherHandlersAmount(n int) PublisherOption {
 		}
 	}
 }
+
+func PublisherContentType(t string) PublisherOption {
+	return func(publisher *Publisher) {
+		publisher.opts.defaultContentType = t
+	}
+}
