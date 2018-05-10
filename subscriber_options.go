@@ -93,6 +93,7 @@ func SubHandlersAmount(n int) SubscriberOption {
 }
 
 // SetDefaultContentType sets content type which codec should be used if ContentType field of message is empty.
+// JSON is used by default.
 func SubSetDefaultContentType(t string) SubscriberOption {
 	return func(subscriber *Subscriber) {
 		subscriber.opts.msgOpts.defaultContentType = t

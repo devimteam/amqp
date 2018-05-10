@@ -10,6 +10,7 @@ import (
 )
 
 type (
+	// ContentTyper is an interface, that is used for choose codec.
 	ContentTyper interface {
 		ContentType() string
 	}
@@ -31,8 +32,7 @@ func constructPublishing(v interface{}, priority uint8, defaultContentType strin
 	msg.Priority = priority
 
 	var contentType string
-	ct, ok := v.(ContentTyper)
-	if ok {
+	if ct, ok := v.(ContentTyper); ok {
 		msg.ContentType = ct.ContentType()
 		contentType = msg.ContentType
 	} else if defaultContentType != "" {
@@ -41,6 +41,7 @@ func constructPublishing(v interface{}, priority uint8, defaultContentType strin
 	} else {
 		msg.ContentType = http.DetectContentType(msg.Body)
 	}
+
 	codec, ok := codecs.Register.Get(contentType)
 	if !ok {
 		return msg, CodecNotFound

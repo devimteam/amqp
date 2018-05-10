@@ -54,7 +54,7 @@ func NewClient(connector conn.Connector, decls ...Declaration) (cl Client, err e
 	if err != nil {
 		return
 	}
-	cl.observer = newObserver(ctx, cl.conn, Min(1), Max(1))
+	cl.observer = newObserver(ctx, cl.conn, Max(1)) // We need only one channel to declare all queues and exchanges.
 	cl.declare()
 	go func() {
 		for <-cl.conn.NotifyClose(); ; <-cl.conn.NotifyClose() {
@@ -268,6 +268,7 @@ type Consumer struct {
 	LimitSize  int
 }
 
+// Publish is used for AMQP Publish parameters.
 type Publish struct {
 	Key       string
 	Mandatory bool

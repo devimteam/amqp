@@ -32,7 +32,7 @@ func init() {
 }
 
 type register struct {
-	mx     sync.Mutex
+	mx     sync.RWMutex
 	codecs map[string]Codec
 }
 
@@ -43,6 +43,8 @@ func (r *register) Register(contentType string, codec Codec) {
 }
 
 func (r *register) Get(contentType string) (Codec, bool) {
+	r.mx.RLock()
+	defer r.mx.RUnlock()
 	codec, ok := r.codecs[contentType]
 	return codec, ok
 }
