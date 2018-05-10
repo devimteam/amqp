@@ -17,7 +17,6 @@ type (
 		conn         *conn.Connection
 		m            sync.Mutex
 		counter      chan struct{}
-		count        int
 		idle         chan idleChan
 		lastRevision time.Time
 		options      observerOpts
@@ -89,7 +88,6 @@ func newObserver(ctx context.Context, conn *conn.Connection, options ...Observer
 		conn:         conn,
 		idle:         make(chan idleChan, opts.max),
 		counter:      make(chan struct{}, opts.max),
-		count:        0,
 		lastRevision: time.Now(),
 		options:      opts,
 		logger:       logger.NoopLogger,
@@ -120,7 +118,6 @@ func (p *observer) channel() *Channel {
 		case idle := <-p.idle:
 			return idle.ch
 		case p.counter <- struct{}{}:
-			p.count++
 			ch := Channel{
 				conn:   p.conn,
 				logger: p.logger,
@@ -141,12 +138,10 @@ Loop:
 		select {
 		case c := <-p.idle:
 			if c.ch.closed {
-				p.count--
 				continue
 			}
-			if revisionTime.Sub(c.since) > p.options.idleDuration && p.count < p.options.min {
+			if revisionTime.Sub(c.since) > p.options.idleDuration && len(p.counter) < p.options.min {
 				c.ch.close()
-				p.count--
 				continue
 			}
 			channels = append(channels, c)
@@ -162,7 +157,7 @@ Loop:
 }
 
 func (p *observer) shouldBeClosed(revisionTime time.Time, c *idleChan) bool {
-	return revisionTime.Sub(c.since) > p.options.idleDuration && p.count > p.options.min
+	return revisionTime.Sub(c.since) > p.options.idleDuration && len(p.counter) > p.options.min
 }
 
 func (p *observer) release(ch *Channel) {

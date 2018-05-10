@@ -21,7 +21,7 @@ type (
 		state       connectionState
 		notifier    Notifier
 		ctx         context.Context
-		done        func()
+		close       func()
 		maxAttempts int
 	}
 )
@@ -31,7 +31,7 @@ func newConnection(opts ...ConnectionOption) *Connection {
 	for i := range opts {
 		opts[i](&c)
 	}
-	c.ctx, c.done = context.WithCancel(c.ctx)
+	c.ctx, c.close = context.WithCancel(c.ctx)
 	return &c
 }
 
@@ -137,7 +137,7 @@ func (c *Connection) NotifyClose() <-chan Signal {
 }
 
 func (c *Connection) Close() error {
-	c.done()
+	c.close()
 	return c.conn.Close()
 }
 
