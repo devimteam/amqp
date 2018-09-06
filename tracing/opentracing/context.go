@@ -10,6 +10,7 @@ import (
 	origin "github.com/streadway/amqp"
 )
 
+// ContextToAMQP injects span to AMQP headers section.
 func ContextToAMQP(tracer opentracing.Tracer) amqp.PublishingBefore {
 	return func(ctx context.Context, p *origin.Publishing) {
 		span := opentracing.SpanFromContext(ctx)
@@ -20,6 +21,13 @@ func ContextToAMQP(tracer opentracing.Tracer) amqp.PublishingBefore {
 	}
 }
 
+// AMQPToContextFabric return function that writes to context event's span.
+//
+// Example:
+// tracer := ...
+// fabric := amqpOpentracing.AMQPToContextFabric(tracer)
+// client.Subscriber(amqp.SubscriberDeliverBefore(fabric("CreateComment"))
+//
 func AMQPToContextFabric(tracer opentracing.Tracer) func(string) amqp.DeliveryBefore {
 	return func(operationName string) amqp.DeliveryBefore {
 		return func(ctx context.Context, delivery *origin.Delivery) context.Context {
