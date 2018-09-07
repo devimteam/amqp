@@ -39,6 +39,8 @@ func AMQPToContextFabric(tracer opentracing.Tracer) func(string) amqp.DeliveryBe
 	}
 }
 
+// A type that conforms to opentracing.TextMapReader and
+// opentracing.TextMapWriter.
 type amqpReaderWriter struct {
 	headers map[string]interface{}
 }

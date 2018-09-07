@@ -48,7 +48,7 @@ This lib is rethinking of [observer lib](https://github.com/devimteam/observer).
 * Everything from AMQP may be used directly.
 
 ## Contributing
-Create an issue or pull request.
+We are waiting for your issue or pull request.
 ## Example
 ```go
 package main

@@ -148,6 +148,8 @@ func listenAndPrintlnSuff(suff string, ch <-chan []interface{}) {
 	}
 }
 
+// this function starts new span on a publisher side.
+// Only for testing, copy-paste from https://github.com/go-kit/kit/blob/master/tracing/opentracing/endpoint.go#L37-L55
 func traceAMQPPub(tracer opentracing.Tracer, operationName string) amqp.PublishingBefore {
 	return func(ctx context.Context, p *amqp2.Publishing) {
 		if parentSpan := opentracing.SpanFromContext(ctx); parentSpan != nil {
@@ -167,6 +169,8 @@ func traceAMQPPub(tracer opentracing.Tracer, operationName string) amqp.Publishi
 	}
 }
 
+// this function starts new span on a subscriber side.
+// Only for testing, copy-paste from https://github.com/go-kit/kit/blob/master/tracing/opentracing/endpoint.go#L17-L33
 func traceAMQPSub(tracer opentracing.Tracer, operationName string) amqp.DeliveryBefore {
 	return func(ctx context.Context, d *amqp2.Delivery) context.Context {
 		serverSpan := opentracing.SpanFromContext(ctx)
