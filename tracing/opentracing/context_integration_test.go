@@ -163,7 +163,7 @@ func traceAMQPPub(tracer opentracing.Tracer, operationName string) amqp.Publishi
 				clientSpan = tracer.StartSpan(operationName)
 			}
 			defer clientSpan.Finish()
-			ext.SpanKindRPCClient.Set(clientSpan)
+			ext.SpanKindProducer.Set(clientSpan)
 			ctx = opentracing.ContextWithSpan(ctx, clientSpan)
 		}
 	}
@@ -181,7 +181,7 @@ func traceAMQPSub(tracer opentracing.Tracer, operationName string) amqp.Delivery
 			serverSpan.SetOperationName(operationName)
 		}
 		defer serverSpan.Finish()
-		ext.SpanKindRPCServer.Set(serverSpan)
+		ext.SpanKindConsumer.Set(serverSpan)
 		ctx = opentracing.ContextWithSpan(ctx, serverSpan)
 		return ctx
 	}
