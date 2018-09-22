@@ -18,33 +18,33 @@ var DEBUG = flag.Bool("debug", false, "Activate pprof")
 
 const testExchangeName = "amqp-client-test"
 
-type X struct {
+type x struct {
 	Num int
 }
 
-type XStorage struct {
+type xStorage struct {
 	storage map[int]int
 	mul     int
 	m       sync.Mutex
 }
 
-func NewXStorage(consumers int) *XStorage {
-	return &XStorage{storage: make(map[int]int), mul: consumers}
+func newXStorage(consumers int) *xStorage {
+	return &xStorage{storage: make(map[int]int), mul: consumers}
 }
 
-func (s *XStorage) Pub(val int) {
+func (s *xStorage) Pub(val int) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	s.storage[val] = s.storage[val] + s.mul
 }
 
-func (s *XStorage) Consume(val int) {
+func (s *xStorage) Consume(val int) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	s.storage[val] = s.storage[val] - 1 // if it panics, then 'val' not in storage
 }
 
-func (s *XStorage) Check() bool {
+func (s *xStorage) Check() bool {
 	s.m.Lock()
 	defer s.m.Unlock()
 	for k, v := range s.storage {
@@ -56,7 +56,7 @@ func (s *XStorage) Check() bool {
 	return false
 }
 
-func (s *XStorage) Error() string {
+func (s *xStorage) Error() string {
 	return fmt.Sprint(s.storage)
 }
 
@@ -73,7 +73,7 @@ func TestMain(t *testing.M) {
 
 func TestNewClient(t *testing.T) {
 	ch := make(chan []interface{})
-	store := NewXStorage(1)
+	store := newXStorage(1)
 	go listenAndPrintlnSuff("recon", ch)
 	cl := initClient(t, TemporaryExchange(testExchangeName))
 	go subFunc("sub", cl, store)
@@ -94,7 +94,7 @@ func initClient(t *testing.T, decls ...Declaration) Client {
 
 func TestNewClient2(t *testing.T) {
 	ch := make(chan []interface{})
-	store := NewXStorage(2)
+	store := newXStorage(2)
 	go listenAndPrintlnSuff("recon", ch)
 	cl := initClient(t, TemporaryExchange(testExchangeName))
 	go subFunc("1", cl, store)
@@ -108,7 +108,7 @@ func TestNewClient2(t *testing.T) {
 
 func TestHighLoad(t *testing.T) {
 	ch := make(chan []interface{})
-	store := NewXStorage(8)
+	store := newXStorage(8)
 	go listenAndPrintlnSuff("recon", ch)
 	cl1 := initClient(t, TemporaryExchange(testExchangeName))
 	cl2 := initClient(t, TemporaryExchange(testExchangeName))
@@ -147,7 +147,7 @@ func TestHighLoad(t *testing.T) {
 
 func TestLong(t *testing.T) {
 	ch := make(chan []interface{})
-	store := NewXStorage(1)
+	store := newXStorage(1)
 	go listenAndPrintlnSuff("recon", ch)
 	cl := initClient(t, TemporaryExchange(testExchangeName))
 	go subFunc("sub", cl, store)
@@ -164,7 +164,7 @@ func TestLong(t *testing.T) {
 
 func TestLimits(t *testing.T) {
 	ch := make(chan []interface{})
-	store := NewXStorage(2)
+	store := newXStorage(2)
 	go listenAndPrintlnSuff("recon", ch)
 	cl := initClient(t, TemporaryExchange(testExchangeName))
 	go fatSubFunc("sub", cl, store, SubscriberLogger(logger.NewChanLogger(ch)))
@@ -179,27 +179,27 @@ func TestLimits(t *testing.T) {
 	}
 }
 
-func subFunc(prefix string, client Client, storage *XStorage) { //, options ...ClientConfig) {
+func subFunc(prefix string, client Client, storage *xStorage) { //, options ...ClientConfig) {
 	ch := make(chan []interface{})
 	go listenAndPrintln(ch)
 	s := client.Subscriber(SubscriberLogger(logger.NewChanLogger(ch)))
-	events := s.SubscribeToExchange(context.Background(), testExchangeName, X{}, Consumer{})
+	events := s.SubscribeToExchange(context.Background(), testExchangeName, x{}, Consumer{})
 	for ev := range events {
 		fmt.Println(prefix, "event data: ", ev.Data)
-		storage.Consume(ev.Data.(*X).Num)
+		storage.Consume(ev.Data.(*x).Num)
 		ev.Done()
 	}
 	fmt.Println("end of events")
 }
 
-func fatSubFunc(prefix string, client Client, storage *XStorage, options ...SubscriberOption) {
+func fatSubFunc(prefix string, client Client, storage *xStorage, options ...SubscriberOption) {
 	ch := make(chan []interface{})
 	go listenAndPrintln(ch)
 	s := client.Subscriber(options...)
-	events := s.SubscribeToExchange(context.Background(), testExchangeName, X{}, Consumer{LimitCount: 5})
+	events := s.SubscribeToExchange(context.Background(), testExchangeName, x{}, Consumer{LimitCount: 5})
 	for ev := range events {
 		fmt.Println(prefix, "event data: ", ev.Data)
-		storage.Consume(ev.Data.(*X).Num)
+		storage.Consume(ev.Data.(*x).Num)
 		time.Sleep(time.Second)
 		ev.Done()
 	}
@@ -218,12 +218,12 @@ func listenAndPrintlnSuff(suff string, ch <-chan []interface{}) {
 	}
 }
 
-func pubFunc(prefix string, from, to int, client Client, timeout time.Duration, storage *XStorage) {
+func pubFunc(prefix string, from, to int, client Client, timeout time.Duration, storage *xStorage) {
 	publisher := client.Publisher()
 	fmt.Println(prefix, "start pubing")
 	for s := from; s < to; s++ {
 		time.Sleep(timeout)
-		err := publisher.Publish(context.Background(), testExchangeName, X{s}, Publish{})
+		err := publisher.Publish(context.Background(), testExchangeName, x{s}, Publish{})
 		if err != nil {
 			fmt.Println(prefix, "pub error:", err)
 			s--
@@ -235,12 +235,12 @@ func pubFunc(prefix string, from, to int, client Client, timeout time.Duration, 
 	fmt.Println(prefix, "done pubing")
 }
 
-func pubFuncGroup(prefix string, from, to int, client Client, timeout time.Duration, group *sync.WaitGroup, storage *XStorage) {
+func pubFuncGroup(prefix string, from, to int, client Client, timeout time.Duration, group *sync.WaitGroup, storage *xStorage) {
 	publisher := client.Publisher()
 	fmt.Println(prefix, "start pubing")
 	for s := from; s < to; s++ {
 		time.Sleep(timeout)
-		err := publisher.Publish(context.Background(), testExchangeName, X{s}, Publish{})
+		err := publisher.Publish(context.Background(), testExchangeName, x{s}, Publish{})
 		if err != nil {
 			fmt.Println(prefix, "pub error:", err)
 			s--
