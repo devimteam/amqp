@@ -49,6 +49,9 @@ const (
 )
 
 func setupDefaultConfigProperties(prop amqp.Table) amqp.Table {
+	if len(prop) == 0 {
+		prop = amqp.Table{}
+	}
 	if _, ok := prop["product"]; !ok {
 		prop["product"] = defaultProduct
 	}
