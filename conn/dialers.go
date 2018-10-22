@@ -37,7 +37,31 @@ func DialTLS(url string, amqps *tls.Config, opts ...ConnectionOption) (*Connecti
 // DialConfig wraps amqp.DialConfig function and adds reconnection ability.
 // Never returns error.
 func DialConfig(url string, config amqp.Config, opts ...ConnectionOption) (*Connection, error) {
+	config.Properties = setupDefaultConfigProperties(config.Properties)
 	return DialWithDialer(func() (*amqp.Connection, error) { return amqp.DialConfig(url, config) }, opts...)
+}
+
+const (
+	defaultProduct     = "https://github.com/devimteam/amqp"
+	defaultVersion     = "v1.1.3"
+	defaultPlatform    = "golang"
+	defaultInformation = "github.com/devimteam/amqp is a wrapper of https://github.com/streadway/amqp"
+)
+
+func setupDefaultConfigProperties(prop amqp.Table) amqp.Table {
+	if _, ok := prop["product"]; !ok {
+		prop["product"] = defaultProduct
+	}
+	if _, ok := prop["version"]; !ok {
+		prop["version"] = defaultVersion
+	}
+	if _, ok := prop["platform"]; !ok {
+		prop["platform"] = defaultPlatform
+	}
+	if _, ok := prop["information"]; !ok {
+		prop["information"] = defaultInformation
+	}
+	return prop
 }
 
 // Open wraps amqp.Open function and adds reconnection ability.
