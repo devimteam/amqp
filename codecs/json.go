@@ -2,8 +2,7 @@ package codecs
 
 import "encoding/json"
 
-type JSONCodec struct {
-}
+type JSONCodec struct{}
 
 func (c *JSONCodec) Encode(v interface{}) ([]byte, error) {
 	return json.Marshal(v)

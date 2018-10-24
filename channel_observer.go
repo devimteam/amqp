@@ -94,12 +94,18 @@ func newObserver(ctx context.Context, conn *conn.Connection, options ...Observer
 		ctx:          ctx,
 	}
 	go func() {
+		timer := time.NewTimer(opts.idleDuration)
+		defer timer.Stop()
 		for {
-			time.Sleep(opts.idleDuration)
+			// construction from time.Timer.Reset documentation
+			if !timer.Stop() {
+				<-timer.C
+			}
+			timer.Reset(opts.idleDuration)
 			select {
 			case <-pool.ctx.Done():
 				return
-			default:
+			case <-timer.C:
 				pool.clear()
 			}
 		}
@@ -141,7 +147,9 @@ Loop:
 				continue
 			}
 			if revisionTime.Sub(c.since) > p.options.idleDuration && len(p.counter) < p.options.min {
-				c.ch.close()
+				if e := c.ch.close(); e != nil {
+					_ = p.logger.Log(e)
+				}
 				continue
 			}
 			channels = append(channels, c)

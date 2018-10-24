@@ -3,12 +3,11 @@ package conn
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/devimteam/amqp/logger"
+	"github.com/pkg/errors"
 	"github.com/streadway/amqp"
 )
 
@@ -23,6 +22,7 @@ type (
 		ctx         context.Context
 		close       func()
 		maxAttempts int
+		config      amqp.Config
 	}
 )
 
@@ -42,6 +42,15 @@ func defaultConnection() Connection {
 		ctx:         context.Background(),
 		maxAttempts: -1,
 		conn:        &amqp.Connection{},
+		config:      setupDefaultConfig(),
+	}
+}
+
+func setupDefaultConfig() amqp.Config {
+	return amqp.Config{
+		Heartbeat:  defaultHeartbeat,
+		Properties: setupDefaultConfigProperties(nil),
+		Locale:     defaultLocale,
 	}
 }
 
@@ -59,7 +68,7 @@ func (c *Connection) Channel() (*amqp.Channel, error) {
 // connect starts itself when connection drops.
 func (c *Connection) connect(dialer Dialer) {
 	c.state.disconnected()
-	c.logger.Log(Disconnected)
+	_ = c.logger.Log(Disconnected)
 	attemptNum, delay, delayCh := 0, c.backoffer(), make(chan Signal)
 ConnectionLoop:
 	for ; isInfinite(c.maxAttempts) || attemptNum < c.maxAttempts; attemptNum++ {
@@ -71,25 +80,28 @@ ConnectionLoop:
 		}()
 		select {
 		case <-c.ctx.Done():
-			c.logger.Log(CanceledError)
+			_ = c.logger.Log(CanceledError)
 			return
 		case <-delayCh:
 			delay.Inc()
 			connection, err := dialer()
 			if err != nil {
-				c.logger.Log(fmt.Errorf("dialer: %v", err))
+				_ = c.logger.Log(errors.Wrap(err, "dialer"))
 				continue
 			}
 			c.conn = connection
 			go func() {
 				select {
 				case e := <-connection.NotifyClose(make(chan *amqp.Error)):
-					c.logger.Log(fmt.Errorf("connection closed: %v", e))
+					_ = c.logger.Log(errors.Wrap(e, "connection closed"))
 					c.notifier.Notify()
 					c.connect(dialer)
 				case <-c.ctx.Done():
-					c.logger.Log(CanceledError)
-					connection.Close()
+					_ = c.logger.Log(CanceledError)
+					e := connection.Close()
+					if e != nil {
+						_ = c.logger.Log(errors.Wrap(e, "connection closed"))
+					}
 					c.notifier.Notify()
 					return
 				}
@@ -99,10 +111,10 @@ ConnectionLoop:
 	}
 	defer c.state.connected()
 	if attemptNum == c.maxAttempts {
-		c.logger.Log(MaxAttemptsError)
+		_ = c.logger.Log(MaxAttemptsError)
 		return
 	}
-	defer c.logger.Log(Connected)
+	defer func() { _ = c.logger.Log(Connected) }()
 }
 
 // Common errors

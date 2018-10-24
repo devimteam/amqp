@@ -17,7 +17,7 @@ func ContextToAMQP(tracer opentracing.Tracer) amqp.PublishingBefore {
 		if span == nil {
 			return
 		}
-		tracer.Inject(span.Context(), opentracing.TextMap, amqpReaderWriter{headers: p.Headers})
+		_ = tracer.Inject(span.Context(), opentracing.TextMap, amqpReaderWriter{headers: p.Headers})
 	}
 }
 

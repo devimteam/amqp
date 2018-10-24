@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/pkg/errors"
+
 	"github.com/devimteam/amqp/conn"
 )
 
@@ -61,9 +63,8 @@ func (p Publisher) workerPool(amqpChan *Channel, channel <-chan interface{}, ctx
 
 func (p Publisher) worker(amqpChan *Channel, channel <-chan interface{}, ctx context.Context, exchangeName string, pub Publish) {
 	for obj := range channel {
-		err := p.publish(amqpChan, ctx, exchangeName, obj, pub)
-		if err != nil {
-			p.opts.log.Log(err)
+		if err := p.publish(amqpChan, ctx, exchangeName, obj, pub); err != nil {
+			_ = p.opts.log.Log(err)
 		}
 	}
 }
@@ -76,9 +77,8 @@ func (p Publisher) publish(channel *Channel, ctx context.Context, exchangeName s
 	for _, before := range p.opts.before {
 		before(ctx, &msg)
 	}
-	err = channel.publish(exchangeName, msg, publish)
-	if err != nil {
-		return WrapError("publish", err)
+	if err = channel.publish(exchangeName, msg, publish); err != nil {
+		return errors.Wrap(err, "publish")
 	}
 	return nil
 }

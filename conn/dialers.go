@@ -3,6 +3,7 @@ package conn
 import (
 	"crypto/tls"
 	"io"
+	"time"
 
 	"github.com/streadway/amqp"
 )
@@ -13,6 +14,14 @@ type (
 
 	Connector func() (*Connection, error)
 )
+
+// Generic connection function.
+func Connect(url string, opts ...ConnectionOption) *Connection {
+	c := newConnection(opts...)
+	dialer := func() (*amqp.Connection, error) { return amqp.DialConfig(url, c.config) }
+	c.connect(dialer)
+	return c
+}
 
 // DialWithDialer wraps any Dialer and adds reconnection ability.
 // Never returns error.
@@ -43,9 +52,11 @@ func DialConfig(url string, config amqp.Config, opts ...ConnectionOption) (*Conn
 
 const (
 	defaultProduct     = "https://github.com/devimteam/amqp"
-	defaultVersion     = "v1.1.3"
+	defaultVersion     = "v1.2.0"
 	defaultPlatform    = "golang"
-	defaultInformation = "github.com/devimteam/amqp is a wrapper of https://github.com/streadway/amqp"
+	defaultInformation = "AMQP lib github.com/devimteam/amqp for golang on top of https://github.com/streadway/amqp"
+	defaultLocale      = "en_US"
+	defaultHeartbeat   = 10 * time.Second
 )
 
 func setupDefaultConfigProperties(prop amqp.Table) amqp.Table {

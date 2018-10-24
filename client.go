@@ -29,9 +29,9 @@ type Event struct {
 	amqp.Delivery
 }
 
-// Done is a shortcut for Ack(false)
+// Done is a shortcut for Ack(false) without returning error
 func (e Event) Done() {
-	e.Ack(false)
+	_ = e.Ack(false)
 }
 
 type Client struct {
@@ -45,14 +45,15 @@ type Client struct {
 	ctx       context.Context
 }
 
-func NewClient(connector conn.Connector, decls ...Declaration) (cl Client, err error) {
+func NewClient(connector conn.Connector, decls ...Declaration) (Client, error) {
+	cl := Client{}
 	cl.constructorBefore(decls...)
 	ctx, done := context.WithCancel(context.Background())
 	cl.done = done
 	cl.ctx = ctx
-	cl.conn, err = connector()
-	if err != nil {
-		return
+	var err error
+	if cl.conn, err = connector(); err != nil {
+		return cl, err
 	}
 	cl.observer = newObserver(ctx, cl.conn, Max(1)) // We need only one channel to declare all queues and exchanges.
 	cl.declare()
@@ -62,16 +63,15 @@ func NewClient(connector conn.Connector, decls ...Declaration) (cl Client, err e
 			case <-ctx.Done():
 				return
 			default:
-				err := cl.conn.NotifyConnected(time.Minute)
-				if err != nil {
-					cl.logger.Log(err)
+				if err := cl.conn.NotifyConnected(time.Minute); err != nil {
+					_ = cl.logger.Log(err)
 					continue
 				}
 				cl.declare()
 			}
 		}
 	}()
-	return
+	return cl, nil
 }
 
 func (c *Client) constructorBefore(decls ...Declaration) {
@@ -92,25 +92,21 @@ type Declaration interface {
 func (c *Client) declare() {
 	ch := c.observer.channel()
 	for _, exchange := range c.exchanges {
-		err := ch.declareExchange(exchange)
-		if err != nil {
-			c.logger.Log(err)
+		if err := ch.declareExchange(exchange); err != nil {
+			_ = c.logger.Log(err)
 		}
 	}
 	for _, queue := range c.queues {
-		warn := checkQueue(queue)
-		if warn != nil {
-			c.logger.Log(warn)
+		if warn := checkQueue(queue); warn != nil {
+			_ = c.logger.Log(warn)
 		}
-		_, err := ch.declareQueue(queue)
-		if err != nil {
-			c.logger.Log(err)
+		if _, err := ch.declareQueue(queue); err != nil {
+			_ = c.logger.Log(err)
 		}
 	}
 	for _, binding := range c.bindings {
-		err := ch.bind(binding)
-		if err != nil {
-			c.logger.Log(err)
+		if err := ch.bind(binding); err != nil {
+			_ = c.logger.Log(err)
 		}
 	}
 	c.observer.release(ch)

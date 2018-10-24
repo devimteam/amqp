@@ -8,8 +8,7 @@ import (
 
 var NotProtoMessage = errors.New("not proto message")
 
-type ProtobufCodec struct {
-}
+type ProtobufCodec struct{}
 
 func (c *ProtobufCodec) Encode(v interface{}) ([]byte, error) {
 	msg, ok := v.(proto.Message)

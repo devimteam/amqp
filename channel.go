@@ -99,9 +99,8 @@ Loop:
 		case <-ctx.Done():
 			return
 		default:
-			err := c.newChan(timeout)
-			if err != nil {
-				c.logger.Log(err)
+			if err := c.newChan(timeout); err != nil {
+				_ = c.logger.Log(err)
 				continue
 			}
 			break Loop
@@ -111,16 +110,17 @@ Loop:
 	for ; !c.closed; c.callMx.Unlock() {
 		select {
 		case <-ctx.Done():
-			c.close()
+			if err := c.close(); err != nil {
+				_ = c.logger.Log(err)
+			}
 			return
 		case <-c.channel.NotifyClose(make(chan *amqp.Error)):
 			c.callMx.Lock()
 			if c.closed {
 				break
 			}
-			err := c.newChan(timeout)
-			if err != nil {
-				c.logger.Log(err)
+			if err := c.newChan(timeout); err != nil {
+				_ = c.logger.Log(err)
 				continue
 			}
 		}

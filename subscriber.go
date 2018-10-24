@@ -2,12 +2,12 @@ package amqp
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"sync"
 
 	"github.com/devimteam/amqp/codecs"
 	"github.com/devimteam/amqp/conn"
+	"github.com/pkg/errors"
 	"github.com/streadway/amqp"
 )
 
@@ -56,14 +56,13 @@ func (s Subscriber) listen(ctx context.Context, channel *Channel, exchangeName, 
 			return
 		default:
 			if s.opts.wait.flag {
-				err := s.conn.NotifyConnected(s.opts.wait.timeout)
-				if err != nil {
-					s.opts.log.Log(err)
+				if err := s.conn.NotifyConnected(s.opts.wait.timeout); err != nil {
+					_ = s.opts.log.Log(err)
 				}
 			}
 			deliveryCh, err := s.prepareDeliveryChan(channel, exchangeName, queueName, cfg)
 			if err != nil {
-				s.opts.log.Log(err)
+				_ = s.opts.log.Log(err)
 				continue
 			}
 			s.workersPool(ctx, queueName, deliveryCh, dataType, eventChan)
@@ -82,7 +81,7 @@ func (s Subscriber) prepareDeliveryChan(
 			Durable:    false,
 		})
 		if err != nil {
-			return nil, WrapError("declare queue", err)
+			return nil, errors.Wrap(err, "declare queue")
 		}
 		err = channel.bind(Binding{
 			Queue:    queue.Name,
@@ -92,18 +91,18 @@ func (s Subscriber) prepareDeliveryChan(
 			NoWait:   false,
 		})
 		if err != nil {
-			return nil, WrapError("bind", queue.Name, "to", exchangeName, err)
+			return nil, errors.Wrapf(err, "bind %s to %s", queue.Name, exchangeName)
 		}
 	}
 	if cfg.LimitCount > 0 || cfg.LimitSize > 0 {
 		err := channel.qos(cfg.LimitCount, cfg.LimitSize)
 		if err != nil {
-			return nil, WrapError("channel qos err", err)
+			return nil, errors.Wrap(err, "channel qos err")
 		}
 	}
 	ch, err := channel.consume(queueName, cfg)
 	if err != nil {
-		return nil, WrapError("channel consume err", err)
+		return nil, errors.Wrap(err, "channel consume err")
 	}
 	return ch, nil
 }
@@ -156,20 +155,20 @@ func (s Subscriber) processEvent(d amqp.Delivery, dataType interface{}, eventCha
 	err := s.checkEvent(d)
 	if err != nil {
 		err = s.errorBefore(d, err)
-		s.opts.log.Log(err)
+		_ = s.opts.log.Log(err)
 		e := d.Nack(false, true)
 		if e != nil {
-			s.opts.log.Log(fmt.Errorf("nack delivery: %v because of %v", e, err))
+			_ = s.opts.log.Log(errors.Errorf("nack delivery: %v because of %v", e, err))
 		}
 		return
 	}
 	ev, err := s.handleEvent(d, dataType)
 	if err != nil {
 		err = s.errorBefore(d, err)
-		s.opts.log.Log(err)
+		_ = s.opts.log.Log(err)
 		e := d.Nack(false, true)
 		if e != nil {
-			s.opts.log.Log(fmt.Errorf("nack delivery: %v because of %v", e, err))
+			_ = s.opts.log.Log(errors.Errorf("nack delivery: %v because of %v", e, err))
 		}
 		return
 	}
