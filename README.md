@@ -1,7 +1,7 @@
 # AMQP
 Golang AMQP wrapper is a library that wraps [amqp](https://github.com/streadway/amqp).
 
-This lib is rethinking of [observer lib](https://github.com/devimteam/observer).
+Check out the [docs](https://godoc.org/github.com/devimteam/amqp).
 
 ### Features
 * Auto-reconnect to brocker and auto redeclare exchanges and queues.
@@ -37,7 +37,7 @@ This lib is rethinking of [observer lib](https://github.com/devimteam/observer).
     )
     ```
 * Encoding and decoding hiden inside.
-    * Use [Codec](https://github.com/devimteam/amqp/blob/master/codecs/codecs.go#L14) interface for your format.
+    * Use [Codec](https://godoc.org/github.com/devimteam/amqp/codecs#Codec) interface for your format.
     * XML, JSON and Protocol Buffers (protobuf) registered yet.
 * Tons of options.
     * Min and max opened channels per publisher/subscriber.
@@ -45,7 +45,7 @@ This lib is rethinking of [observer lib](https://github.com/devimteam/observer).
     * Any amount of data formats.
     * Fill all message fields as you wish.
     * And more others...
-* Everything from AMQP may be used directly.
+* Everything from [AMQP](https://github.com/streadway/amqp) may be used directly.
 
 ## Contributing
 We are waiting for your issue or pull request.
