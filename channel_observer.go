@@ -6,10 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devimteam/amqp/metrics"
-
 	"github.com/devimteam/amqp/conn"
 	"github.com/devimteam/amqp/logger"
+	"github.com/devimteam/amqp/metrics"
 )
 
 const defaultChannelIdleDuration = time.Second * 15
