@@ -98,8 +98,7 @@ ConnectionLoop:
 					c.connect(dialer)
 				case <-c.ctx.Done():
 					_ = c.logger.Log(CanceledError)
-					e := connection.Close()
-					if e != nil {
+					if e := connection.Close(); e != nil {
 						_ = c.logger.Log(errors.Wrap(e, "connection closed"))
 					}
 					c.notifier.Notify()
@@ -109,12 +108,12 @@ ConnectionLoop:
 			break ConnectionLoop
 		}
 	}
-	defer c.state.connected()
 	if attemptNum == c.maxAttempts {
 		_ = c.logger.Log(MaxAttemptsError)
 		return
 	}
-	defer func() { _ = c.logger.Log(Connected) }()
+	_ = c.logger.Log(Connected)
+	defer c.state.connected()
 }
 
 // Common errors

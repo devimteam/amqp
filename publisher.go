@@ -74,6 +74,7 @@ func (p Publisher) publish(channel *Channel, ctx context.Context, exchangeName s
 	if err != nil {
 		return err
 	}
+	go p.opts.counterMetric.Add(1) // non-blocking call
 	for _, before := range p.opts.before {
 		before(ctx, &msg)
 	}

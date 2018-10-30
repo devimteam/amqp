@@ -3,6 +3,8 @@ package amqp
 import (
 	"time"
 
+	"github.com/devimteam/amqp/metrics"
+
 	"github.com/devimteam/amqp/logger"
 )
 
@@ -12,12 +14,13 @@ type subscriberOptions struct {
 		flag    bool
 		timeout time.Duration
 	}
-	workers      int
-	processAll   bool
-	log          logger.Logger
-	msgOpts      subMessageOptions
-	errorBefore  []ErrorBefore
-	observerOpts []ObserverOption
+	workers       int
+	processAll    bool
+	log           logger.Logger
+	msgOpts       subMessageOptions
+	errorBefore   []ErrorBefore
+	observerOpts  []ObserverOption
+	counterMetric metrics.Counter
 }
 
 func defaultSubOptions() subscriberOptions {
@@ -31,6 +34,7 @@ func defaultSubOptions() subscriberOptions {
 	opts.msgOpts.defaultContentType = defaultContentType
 	opts.workers = defaultWorkers
 	opts.log = logger.NoopLogger
+	opts.counterMetric = metrics.NoopCounter
 	return opts
 }
 
@@ -103,5 +107,11 @@ func SubSetDefaultContentType(t string) SubscriberOption {
 func SubWithObserverOptions(opts ...ObserverOption) SubscriberOption {
 	return func(subscriber *Subscriber) {
 		subscriber.opts.observerOpts = append(subscriber.opts.observerOpts, opts...)
+	}
+}
+
+func SubProcessedMetric(counter metrics.Counter) SubscriberOption {
+	return func(subscriber *Subscriber) {
+		subscriber.opts.counterMetric = counter
 	}
 }
