@@ -95,3 +95,9 @@ func ConfigConnector(url string, config amqp.Config, opts ...ConnectionOption) C
 		return DialConfig(url, config, opts...)
 	}
 }
+
+func NewConnector(url string, opts ...ConnectionOption) Connector {
+	return func() (*Connection, error) {
+		return Connect(url, opts...), nil
+	}
+}
