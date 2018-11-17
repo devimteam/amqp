@@ -33,7 +33,7 @@ func AMQPToContextFabric(tracer opentracing.Tracer) func(string) amqp.DeliveryBe
 		return func(ctx context.Context, delivery *origin.Delivery) context.Context {
 			// If an error occurred, span will be root span
 			spanContext, _ := tracer.Extract(opentracing.TextMap, amqpReaderWriter{headers: delivery.Headers})
-			span := tracer.StartSpan(operationName, ext.RPCServerOption(spanContext))
+			span := tracer.StartSpan(operationName, ext.SpanKindConsumer, opentracing.FollowsFrom(spanContext))
 			return opentracing.ContextWithSpan(ctx, span)
 		}
 	}
