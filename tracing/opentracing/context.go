@@ -17,7 +17,9 @@ func ContextToAMQP(tracer opentracing.Tracer) amqp.PublishingBefore {
 		if span == nil {
 			return
 		}
-		_ = tracer.Inject(span.Context(), opentracing.TextMap, amqpReaderWriter{headers: p.Headers})
+		wr := amqpReaderWriter{headers: p.Headers}
+		_ = tracer.Inject(span.Context(), opentracing.TextMap, &wr)
+		p.Headers = wr.headers
 	}
 }
 
@@ -62,6 +64,9 @@ func (w amqpReaderWriter) ForeachKey(handler func(key, val string) error) error 
 	return nil
 }
 
-func (w amqpReaderWriter) Set(key, val string) {
+func (w *amqpReaderWriter) Set(key, val string) {
+	if w.headers == nil {
+		w.headers = make(map[string]interface{})
+	}
 	w.headers[key] = val
 }

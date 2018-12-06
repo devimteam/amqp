@@ -78,9 +78,11 @@ func pubFunc(prefix string, from, to int, client amqp.Client, timeout time.Durat
 		),
 	)
 	fmt.Println(prefix, "start pubing")
+	span := tracer.StartSpan("Publish Sender")
+	ctx := opentracing.ContextWithSpan(context.Background(), span)
 	for s := from; s < to; s++ {
 		time.Sleep(timeout)
-		err := publisher.Publish(context.Background(), testExchangeName, x{s}, amqp.Publish{})
+		err := publisher.Publish(ctx, testExchangeName, x{s}, amqp.Publish{})
 		if err != nil {
 			fmt.Println(prefix, "pub error:", err)
 			s--
@@ -89,6 +91,7 @@ func pubFunc(prefix string, from, to int, client amqp.Client, timeout time.Durat
 			fmt.Println(prefix, "pub: ", s)
 		}
 	}
+	span.Finish()
 	fmt.Println(prefix, "done pubing")
 }
 
