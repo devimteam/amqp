@@ -143,7 +143,7 @@ func (s Subscriber) processEvents(
 			}
 			s.processEvent(d, dataType, eventChan)
 		case <-ctx.Done():
-			if s.opts.processAll && processedAll {
+			if (s.opts.processAll && processedAll) || !s.opts.processAll {
 				close(eventChan)
 				return
 			}
