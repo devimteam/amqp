@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/devimteam/amqp/logger"
+	"github.com/devimteam/amqp/metrics"
 )
 
 type PublisherOption func(*Publisher)
@@ -15,9 +16,10 @@ type publisherOptions struct {
 		flag    bool
 		timeout time.Duration
 	}
-	log          logger.Logger
-	observerOpts []ObserverOption
-	workers      int
+	log           logger.Logger
+	observerOpts  []ObserverOption
+	workers       int
+	counterMetric metrics.Counter
 }
 
 func defaultPubOptions() publisherOptions {
@@ -27,6 +29,7 @@ func defaultPubOptions() publisherOptions {
 	opts.log = logger.NoopLogger
 	opts.defaultContentType = defaultContentType
 	opts.workers = defaultWorkers
+	opts.counterMetric = metrics.NoopCounter
 	return opts
 }
 
@@ -73,5 +76,11 @@ func PublisherHandlersAmount(n int) PublisherOption {
 func PublisherContentType(t string) PublisherOption {
 	return func(publisher *Publisher) {
 		publisher.opts.defaultContentType = t
+	}
+}
+
+func PublisherProcessedMetric(counter metrics.Counter) PublisherOption {
+	return func(publisher *Publisher) {
+		publisher.opts.counterMetric = counter
 	}
 }

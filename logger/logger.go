@@ -7,7 +7,7 @@ type Logger interface {
 	Log(v ...interface{}) error
 }
 
-var NoopLogger = noopLogger{}
+var NoopLogger Logger = noopLogger{}
 
 type noopLogger struct{}
 

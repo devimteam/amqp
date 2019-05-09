@@ -8,6 +8,7 @@ import (
 
 	"github.com/devimteam/amqp/conn"
 	"github.com/devimteam/amqp/logger"
+	"github.com/devimteam/amqp/metrics"
 )
 
 const defaultChannelIdleDuration = time.Second * 15
@@ -20,7 +21,6 @@ type (
 		idle         chan idleChan
 		lastRevision time.Time
 		options      observerOpts
-		logger       logger.Logger
 		ctx          context.Context
 	}
 	observerOpts struct {
@@ -31,6 +31,9 @@ type (
 			count int
 			size  int
 		}
+		idleMetric metrics.Gauge
+		allMetric  metrics.Gauge
+		logger     logger.Logger
 	}
 	ObserverOption func(opts *observerOpts)
 )
@@ -75,11 +78,32 @@ func LimitSize(size int) ObserverOption {
 	}
 }
 
+func ObserverWithLogger(logger logger.Logger) ObserverOption {
+	return func(opts *observerOpts) {
+		opts.logger = logger
+	}
+}
+
+func AllMetric(counter metrics.Gauge) ObserverOption {
+	return func(opts *observerOpts) {
+		opts.allMetric = counter
+	}
+}
+
+func IdleMetric(counter metrics.Gauge) ObserverOption {
+	return func(opts *observerOpts) {
+		opts.idleMetric = counter
+	}
+}
+
 func newObserver(ctx context.Context, conn *conn.Connection, options ...ObserverOption) *observer {
 	opts := observerOpts{
 		idleDuration: defaultChannelIdleDuration,
 		min:          0,
-		max:          math.MaxUint16, // From https://www.rabbitmq.com/resources/specs/amqp0-9-1.pdf, section 4.9 Limitations
+		max:          math.MaxUint16,
+		idleMetric:   metrics.NoopGauge,
+		allMetric:    metrics.NoopGauge,
+		logger:       logger.NoopLogger,
 	}
 	for _, o := range options {
 		o(&opts)
@@ -90,7 +114,6 @@ func newObserver(ctx context.Context, conn *conn.Connection, options ...Observer
 		counter:      make(chan struct{}, opts.max),
 		lastRevision: time.Now(),
 		options:      opts,
-		logger:       logger.NoopLogger,
 		ctx:          ctx,
 	}
 	go func() {
@@ -126,7 +149,7 @@ func (p *observer) channel() *Channel {
 		case p.counter <- struct{}{}:
 			ch := Channel{
 				conn:   p.conn,
-				logger: p.logger,
+				logger: p.options.logger,
 			}
 			ch.callMx.Lock() // Lock to prevent calls on nil channel. Mutex should be unlocked in `keepalive` function.
 			go ch.keepalive(p.ctx, time.Minute)
@@ -141,19 +164,21 @@ func (p *observer) clear() {
 	revisionTime := time.Now()
 Loop:
 	for {
+		// fetch all idle channels from queue
 		select {
 		case c := <-p.idle:
 			if c.ch.closed {
 				continue
 			}
-			if revisionTime.Sub(c.since) > p.options.idleDuration && len(p.counter) < p.options.min {
+			if p.shouldBeClosed(revisionTime, c) {
 				if e := c.ch.close(); e != nil {
-					_ = p.logger.Log(e)
+					_ = p.options.logger.Log(e)
 				}
 				continue
 			}
 			channels = append(channels, c)
 		default:
+			// there is no idle channels: break the loop
 			break Loop
 		}
 	}
@@ -162,10 +187,16 @@ Loop:
 	}
 	p.lastRevision = revisionTime
 	p.m.Unlock()
+	go p.updateMetrics() // non-blocking call
 }
 
-func (p *observer) shouldBeClosed(revisionTime time.Time, c *idleChan) bool {
+func (p *observer) shouldBeClosed(revisionTime time.Time, c idleChan) bool {
 	return revisionTime.Sub(c.since) > p.options.idleDuration && len(p.counter) > p.options.min
+}
+
+func (p *observer) updateMetrics() {
+	p.options.idleMetric.Set(float64(len(p.idle)))
+	p.options.allMetric.Set(float64(len(p.counter)))
 }
 
 func (p *observer) release(ch *Channel) {

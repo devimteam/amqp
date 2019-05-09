@@ -152,6 +152,7 @@ func (s Subscriber) processEvents(
 }
 
 func (s Subscriber) processEvent(d amqp.Delivery, dataType interface{}, eventChan chan<- Event) {
+	go s.opts.counterMetric.Add(1) // non-blocking call
 	err := s.checkEvent(d)
 	if err != nil {
 		err = s.errorBefore(d, err)
